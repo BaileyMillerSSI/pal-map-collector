@@ -97,21 +97,47 @@ public static class SnapshotContractV1
                 ValidateLocation(player.Location, errors);
             }
         }
-        foreach (var guild in envelope.Snapshot.World?.Data?.Guilds ?? [])
+        var world = envelope.Snapshot.World?.Data;
+        if (world?.Guilds is not null)
         {
-            RejectIpAddress(guild.Name, "$.snapshot.world.data.guilds[].name", errors);
-            foreach (var @base in guild.Bases)
-                RejectIpAddress(@base.Label, "$.snapshot.world.data.guilds[].bases[].label", errors);
+            foreach (var guild in world.Guilds)
+            {
+                if (guild is null)
+                {
+                    errors.Add("$.snapshot.world.data.guilds: Entries must not be null.");
+                    continue;
+                }
+
+                RejectIpAddress(guild.Name, "$.snapshot.world.data.guilds[].name", errors);
+                if (guild.Bases is null) continue;
+                foreach (var @base in guild.Bases)
+                {
+                    if (@base is null) errors.Add("$.snapshot.world.data.guilds[].bases: Entries must not be null.");
+                    else RejectIpAddress(@base.Label, "$.snapshot.world.data.guilds[].bases[].label", errors);
+                }
+            }
         }
-        RejectIpAddress(envelope.Snapshot.World?.Data?.Stats.SourceTime, "$.snapshot.world.data.stats.sourceTime", errors);
-        RejectIpAddress(envelope.Snapshot.World?.Data?.Stats.InGameTime, "$.snapshot.world.data.stats.inGameTime", errors);
-        RejectIpAddress(envelope.Snapshot.Server?.Data?.Name, "$.snapshot.server.data.name", errors);
-        RejectIpAddress(envelope.Snapshot.Server?.Data?.Description, "$.snapshot.server.data.description", errors);
-        foreach (var platform in envelope.Snapshot.Server?.Data?.SupportedPlatforms ?? [])
-            RejectIpAddress(platform, "$.snapshot.server.data.supportedPlatforms[]", errors);
-        RejectIpAddress(envelope.Snapshot.Server?.Data?.Rules.Difficulty, "$.snapshot.server.data.rules.difficulty", errors);
-        RejectIpAddress(envelope.Snapshot.Server?.Data?.Rules.DeathPenalty, "$.snapshot.server.data.rules.deathPenalty", errors);
-        ValidateRules(envelope.Snapshot.Server?.Data?.Rules, errors);
+        RejectIpAddress(world?.Stats?.SourceTime, "$.snapshot.world.data.stats.sourceTime", errors);
+        RejectIpAddress(world?.Stats?.InGameTime, "$.snapshot.world.data.stats.inGameTime", errors);
+
+        var server = envelope.Snapshot.Server?.Data;
+        RejectIpAddress(server?.Name, "$.snapshot.server.data.name", errors);
+        RejectIpAddress(server?.Description, "$.snapshot.server.data.description", errors);
+        if (server?.SupportedPlatforms is not null)
+        {
+            foreach (var platform in server.SupportedPlatforms)
+            {
+                if (platform is null)
+                    errors.Add("$.snapshot.server.data.supportedPlatforms: Entries must not be null.");
+                else
+                    RejectIpAddress(platform, "$.snapshot.server.data.supportedPlatforms[]", errors);
+            }
+        }
+
+        var rules = server?.Rules;
+        RejectIpAddress(rules?.Difficulty, "$.snapshot.server.data.rules.difficulty", errors);
+        RejectIpAddress(rules?.DeathPenalty, "$.snapshot.server.data.rules.deathPenalty", errors);
+        ValidateRules(rules, errors);
     }
 
     private static void ValidateSection<T>(SnapshotSection<T>? section, string path, List<string> errors)

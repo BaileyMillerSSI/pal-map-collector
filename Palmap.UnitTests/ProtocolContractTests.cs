@@ -1,4 +1,5 @@
 using Palmap.Protocol;
+using System.Text.Json.Nodes;
 
 namespace Palmap.UnitTests;
 
@@ -103,6 +104,68 @@ public sealed class ProtocolContractTests
         };
 
         Assert.Throws<SnapshotContractValidationException>(() => SnapshotContractV1.Validate(invalid));
+    }
+
+    [Fact]
+    public void ExplicitNullNestedRequiredMembersProduceValidationException()
+    {
+        var root = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        var snapshot = root["snapshot"]!.AsObject();
+        snapshot["world"] = JsonNode.Parse("""
+            {
+              "status": {
+                "state": "healthy",
+                "isStale": false,
+                "lastAttemptedAt": "2026-07-21T12:00:00+00:00",
+                "lastSuccessfulAt": "2026-07-21T12:00:00+00:00"
+              },
+              "data": {
+                "stats": null,
+                "guilds": [
+                  null,
+                  {
+                    "id": "opaque-guild-0001",
+                    "name": "Synthetic guild",
+                    "onlinePlayerCount": 0,
+                    "knownBuildingCount": 0,
+                    "buildingCountComplete": true,
+                    "baseCount": 0,
+                    "basePalCount": 0,
+                    "unassignedBasePalCount": 0,
+                    "totalLevel": 0,
+                    "currentHp": 0,
+                    "maxHp": 0,
+                    "estimatedPower": 0,
+                    "bases": null
+                  }
+                ]
+              }
+            }
+            """);
+        snapshot["server"] = JsonNode.Parse("""
+            {
+              "status": {
+                "state": "healthy",
+                "isStale": false,
+                "lastAttemptedAt": "2026-07-21T12:00:00+00:00",
+                "lastSuccessfulAt": "2026-07-21T12:00:00+00:00"
+              },
+              "data": {
+                "name": "Synthetic server",
+                "description": "Synthetic description",
+                "supportedPlatforms": [null],
+                "maxPlayers": 0,
+                "maxPalsPerBase": 0,
+                "dayTimeSpeedRate": 1,
+                "nightTimeSpeedRate": 1,
+                "pvpEnabled": false,
+                "rules": null
+              }
+            }
+            """);
+
+        Assert.Throws<SnapshotContractValidationException>(() =>
+            SnapshotContractV1.Deserialize(root.ToJsonString()));
     }
 
     private static string FixturePath() =>
