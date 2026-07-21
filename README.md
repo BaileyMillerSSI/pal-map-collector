@@ -1,21 +1,60 @@
 # Palmap Collector
 
-Palmap Collector polls the authenticated REST API exposed by a Palworld dedicated server. It currently reads player locations, world actor snapshots, and server settings on independent schedules, then passes those typed payloads to a safe no-op collector sink. The outbound Palmap backend contract is intentionally deferred until that API is defined.
+Palmap Collector is the public, outbound-only companion for a Palworld dedicated
+server. It polls Palworld's authenticated REST API on the private container or
+LAN network, converts responses into a strict privacy-safe snapshot, and sends
+only that allowlisted snapshot to a configured Palmap ingest endpoint.
 
-The service targets .NET 10, emits structured console logs through Serilog, and exposes separate liveness and Palworld-dependent readiness checks.
+The repository also owns `Palmap.Protocol`, the public v1 wire contract shared
+with compatible ingest services. The hosted Palmap product is intentionally not
+part of this repository.
 
-## Prerequisites
+## Security model
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- Docker Engine with Docker Compose for the sample and integration tests
-- At least 16 GB of available memory for the Palworld server; 32 GB is recommended for sustained use
-- Enough storage for the Palworld server download and world data
+- The collector opens no listener and publishes no port.
+- Palworld REST credentials stay local and are never included in snapshots.
+- Player/account/platform identifiers, IP addresses, world GUIDs, RCON/REST
+  configuration, upstream error bodies, and unknown fields are excluded.
+- Player, guild, and base identifiers are HMAC-derived with an operator-owned
+  privacy key. Use a unique random key for each server and keep it stable.
+- HTTPS ingest is mandatory. Plain HTTP requires both the Development
+  environment and the explicit `PALMAP_ALLOW_INSECURE_INGEST=true` opt-in.
 
-The first Palworld container start downloads the dedicated server and can take several minutes. Its health check has a five-minute startup grace period for this reason.
+Never expose Palworld's REST port publicly. Its credentials grant administrative
+access to the game server.
 
-## Quick start with Docker Compose
+## Configuration
 
-The included [compose.yaml](compose.yaml) builds the collector and starts it alongside `thijsvanloef/palworld-server-docker:latest`:
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `PALWORLD_API_URL` | yes | Private HTTP(S) origin of the Palworld REST API |
+| `PALWORLD_ADMIN_USERNAME` | yes | Palworld REST Basic-auth username |
+| `PALWORLD_ADMIN_PASSWORD` or `_FILE` | yes | Palworld REST password |
+| `PALMAP_INGEST_URL` | yes | Complete snapshot ingest URL; no production domain is compiled in |
+| `PALMAP_CLIENT_ID` | yes | Operator-visible Server/Client ID |
+| `PALMAP_CLIENT_SECRET` or `_FILE` | yes | Collector credential secret |
+| `PALMAP_PRIVACY_KEY` or `_FILE` | yes | Base64 value containing exactly 256 random bits |
+| `PALMAP_ALLOW_INSECURE_INGEST` | no | Development-only opt-in for an HTTP ingest URL; default `false` |
+
+Only one of a secret's direct variable and `_FILE` variant may be set. Secret
+files are read at startup and trailing line endings are removed.
+
+For local Aspire development from a remote Palworld machine, set:
+
+```env
+DOTNET_ENVIRONMENT=Development
+PALMAP_INGEST_URL=http://192.0.2.10:5080/api/ingest/v1/snapshots
+PALMAP_ALLOW_INSECURE_INGEST=true
+```
+
+`192.0.2.10` is a documentation address; replace it with the Aspire machine's
+private LAN address. Never use the insecure flag outside an isolated development
+network.
+
+## Run with Compose
+
+Copy the synthetic templates, replace every `replace-with-...` value, and keep
+the resulting files untracked:
 
 ```powershell
 Get-ChildItem ./config/*.env.example | ForEach-Object {
@@ -26,118 +65,46 @@ docker compose ps
 docker compose logs -f collector
 ```
 
-Compose reads the ignored `config/*.env` copies, while only `*.env.example` templates are tracked. The templates deliberately contain local-only demonstration credentials. Change `ADMIN_PASSWORD` and the matching `PalworldApi__Admin__Password` in the copied files before adapting the sample for a real server.
+The Compose topology publishes only Palworld's player-facing game ports. The
+REST API stays on the private Compose network and the collector has no port.
 
-After both services are healthy:
+## Delivery behavior
 
-```powershell
-Invoke-WebRequest http://127.0.0.1:8080/health/live
-Invoke-WebRequest http://127.0.0.1:8080/health/ready
-```
-
-Stop the stack with:
-
-```powershell
-docker compose down
-```
-
-World data remains in `./palworld`. REST port 8212 and the collector port are bound to host loopback only. Do not publicly expose the Palworld REST API: its credentials grant administrative access.
-
-## Local .NET development
-
-Start a Palworld server with its REST API enabled, then override the checked-in development values through environment variables or user secrets:
-
-```powershell
-$env:PalworldApi__BaseUrl = "http://127.0.0.1:8212"
-$env:PalworldApi__Admin__Username = "admin"
-$env:PalworldApi__Admin__Password = "your-admin-password"
-dotnet run --project Palmap.Collector
-```
-
-The default local HTTP address is listed by `dotnet run` from `launchSettings.json`. `/health/live` succeeds when the collector process is responsive; `/health/ready` succeeds only after an authenticated request to Palworld `/v1/api/info` succeeds.
-
-## Configuration
-
-.NET configuration hierarchy is used throughout. JSON keys use `:` and environment variables use `__`:
-
-| Setting | Default | Purpose |
-| --- | ---: | --- |
-| `PalworldApi:BaseUrl` | `http://localhost:8212` | Palworld REST origin, including TCP port 8212 |
-| `PalworldApi:Admin:Username` | `admin` | Palworld's REST Basic-auth username |
-| `PalworldApi:Admin:Password` | none | REST admin password; required at startup |
-| `Collector:PlayerLocationUpdateIntervalMs` | `5000` | Player polling period |
-| `Collector:GameDataUpdateIntervalMs` | `30000` | World actor snapshot polling period |
-| `Collector:ServerSettingsUpdateIntervalMs` | `3600000` | Server settings polling period |
-| `Collector:FailureRetryIntervalMs` | `5000` | Retry period after an unavailable server or failed report |
-| `Collector:PalworldHealthCacheDurationMs` | `5000` | Shared health-probe cache duration |
-
-The URL must be an absolute HTTP or HTTPS URL. All intervals must be between 1 and `2147483647` milliseconds. The admin password has no checked-in default; missing credentials stop the process during startup with an options-validation error.
-
-All reporters share one singleton Palworld health gate. It coalesces and briefly caches probes, prevents reporting calls while REST is unavailable, and releases reporters immediately when the server becomes healthy. The singleton retains only health state; each probe and report uses a short-lived factory client so DNS and handler rotation continue to work. A failed HTTP report invalidates the cached state and retries after `FailureRetryIntervalMs`, rather than waiting for the report's normal interval.
-
-The Palworld container needs these settings for complete coverage:
-
-```env
-REST_API_ENABLED=true
-REST_API_PORT=8212
-ENABLE_GAMEDATA_API=true
-SHOW_PLAYER_LIST=true
-```
-
-### Logging
-
-Serilog writes structured text to stdout. Control its default or category levels through `appsettings.json` or environment variables:
-
-```powershell
-$env:Serilog__MinimumLevel__Default = "Debug"
-$env:Serilog__MinimumLevel__Override__Microsoft = "Warning"
-```
-
-Supported level names include `Verbose`, `Debug`, `Information`, `Warning`, `Error`, and `Fatal`. Environment-variable changes require a process restart. Credentials and authorization headers are never written to logs.
+Player, world/metrics, and settings polling are independent. Each section keeps
+its last good value and reports explicit healthy, delayed, or unavailable source
+state. The delivery queue has capacity one: during an outage it retains only the
+latest pending snapshot. Each attempted envelope is serialized once and retried
+with bounded exponential backoff, jitter, `Retry-After` support, and a timeout.
+Authentication (`401`) and compatibility (`426`) failures stop the worker so an
+operator can correct configuration or upgrade it.
 
 ## Build and test
 
-Build the complete solution and run the normal test suite:
+Use the .NET 10 SDK:
 
 ```powershell
-dotnet build Palmap.slnx
-dotnet test Palmap.slnx
+dotnet restore Palmap.slnx
+dotnet format Palmap.slnx --verify-no-changes --no-restore
+dotnet build Palmap.slnx --configuration Release --no-restore --warnaserror
+dotnet test Palmap.slnx --configuration Release --no-build --no-restore
+dotnet pack Palmap.Protocol --configuration Release --no-build --no-restore
+pwsh ./scripts/Test-Secrets.ps1
 ```
 
-Integration tests are part of the solution but skip automatically unless explicitly enabled, so the normal command does not require Docker. Collect unit-test coverage with:
+The protocol package includes the v1 JSON Schema and a synthetic fixture. The
+planned initial public compatibility release is `Palmap.Protocol 1.0.0-rc.1`;
+publishing is deliberately separate from normal CI.
 
-```powershell
-dotnet test Palmap.UnitTests --collect:"Code Coverage;Format=cobertura" --results-directory TestResults
-```
+## Releases
 
-### Compose integration tests
+Container builds target `linux/amd64` and `linux/arm64`. Published images use an
+immutable `sha-<commit>` tag. Version tags create matching semantic-version image
+tags, and `latest` moves only for a stable version tag (never for `main` or a
+prerelease). Public release builds attach SBOM/provenance and artifact
+attestations. This repository does not publish from pull requests.
 
-Start the sample, wait for authenticated REST readiness, and run the live suite:
+## License
 
-```powershell
-docker compose up -d --build --wait
-$env:PALMAP_RUN_INTEGRATION_TESTS = "true"
-$env:PALMAP_PALWORLD_ADMIN_PASSWORD = "palmap-integration"
-dotnet test Palmap.IntegrationTests
-docker compose down
-```
-
-Optional integration-test overrides are `PALMAP_PALWORLD_URL` (default `http://127.0.0.1:8212`) and `PALMAP_COLLECTOR_URL` (default `http://127.0.0.1:8080`).
-
-The live suite checks server info, players, settings, world actor data, metrics, rejected credentials, and both collector health endpoints.
-
-## Continuous integration and delivery
-
-The `CI/CD` GitHub Actions workflow runs for pull requests targeting `main`. It verifies formatting, restores and builds the full solution in Release mode with warnings treated as errors, runs the normal test suite, uploads TRX test results, and builds the production container without publishing it. Configure both `.NET build and test` and `Container build / publish` as required branch-protection checks for `main`.
-
-After the same checks pass on a push to `main`, the workflow publishes the image to `ghcr.io/<owner>/<repository>` using the repository's built-in `GITHUB_TOKEN`. Each image receives the tags `main`, `latest`, and `sha-<full-commit-sha>`. The SHA tag is immutable deployment input; `main` and `latest` track the newest successful main-branch build. Published images also include OCI metadata, SBOM/provenance data, and a GitHub artifact attestation.
-
-No registry secret is required. The workflow grants `packages: write` only to the container job. Repository or organization policy must allow GitHub Actions to create and write packages; package visibility and access can then be managed from the package settings in GitHub.
-
-## Troubleshooting
-
-- `docker compose up --wait` may take several minutes on first boot while Steam downloads Palworld. Follow progress with `docker compose logs -f palworld`.
-- A healthy Palworld process with an unhealthy collector readiness endpoint usually indicates a URL or admin-password mismatch. The password must match in the copied `server.env` and `collector.env` files.
-- A failing `/game-data` request usually means `ENABLE_GAMEDATA_API=true` was not applied before the Palworld server started.
-- If port 8212 or 8080 is already occupied, change the host side of the loopback port mapping and set the corresponding integration-test URL. The collector-to-Palworld URL inside Compose remains `http://palworld:8212`.
-- The no-op collector sink is expected to log collection summaries without transmitting data. Implementing a remote Palmap backend requires its endpoint and payload contract.
+Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for
+attribution and the Palworld trademark disclaimer. See [SECURITY.md](SECURITY.md)
+for private vulnerability reporting guidance.

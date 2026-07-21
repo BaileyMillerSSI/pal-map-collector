@@ -4,6 +4,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$repositoryRoot = Split-Path -Parent $PSScriptRoot
+$gitRootArguments = @('-c', "safe.directory=$repositoryRoot", '-C', $repositoryRoot)
 
 $patterns = @(
     '-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----',
@@ -31,19 +33,27 @@ function Test-Content {
 }
 
 if ($History) {
-    foreach ($revision in (git rev-list --all)) {
-        foreach ($path in (git ls-tree -r --name-only $revision)) {
-            $content = git show "${revision}:$path" 2>$null
+    $revisions = git @gitRootArguments rev-list --all
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to enumerate Git history.' }
+    foreach ($revision in $revisions) {
+        $paths = git @gitRootArguments ls-tree -r --name-only $revision
+        if ($LASTEXITCODE -ne 0) { throw "Unable to enumerate revision $revision." }
+        foreach ($path in $paths) {
+            $content = git @gitRootArguments show "${revision}:$path" 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Test-Content -Label "$($revision.Substring(0, 12)):$path" -Content $content
             }
+            else { throw "Unable to inspect $($revision.Substring(0, 12)):$path." }
         }
     }
 }
 else {
-    foreach ($path in (git ls-files)) {
-        if (Test-Path -LiteralPath $path -PathType Leaf) {
-            Test-Content -Label $path -Content (Get-Content -LiteralPath $path)
+    $paths = git @gitRootArguments ls-files
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to enumerate tracked files.' }
+    foreach ($path in $paths) {
+        $fullPath = Join-Path $repositoryRoot $path
+        if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+            Test-Content -Label $path -Content (Get-Content -LiteralPath $fullPath)
         }
     }
 }

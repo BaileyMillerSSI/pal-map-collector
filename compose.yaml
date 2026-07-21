@@ -11,10 +11,11 @@ services:
     ports:
       - "8211:8211/udp"
       - "27015:27015/udp"
-      - "127.0.0.1:8212:8212/tcp"
     volumes:
       - ./palworld:/palworld/
     healthcheck:
+      # gitleaks:allow -- ADMIN_PASSWORD is an environment-variable reference,
+      # not an embedded value. The literal is narrowly allowlisted in .gitleaks.toml.
       test:
         - CMD-SHELL
         - >-
@@ -28,7 +29,7 @@ services:
       start_period: 5m
 
   collector:
-    image: palmap/palworld-map-collector:local
+    image: palmap/pal-map-collector:local
     build:
       context: .
       dockerfile: Palmap.Collector/Dockerfile
@@ -36,14 +37,10 @@ services:
     stop_grace_period: 30s
     env_file:
       - ./config/collector.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       palworld:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:8080:8080/tcp"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health/ready"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 15s
+    # No ports: the collector is outbound-only. Its container health check reads
+    # a process heartbeat written inside the container.

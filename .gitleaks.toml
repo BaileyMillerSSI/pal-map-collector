@@ -1,0 +1,7 @@
+title = "Palmap Collector gitleaks configuration"
+
+[[allowlists]]
+description = "Compose health probe references the runtime ADMIN_PASSWORD variable; it contains no value"
+condition = "AND"
+paths = ['''^compose\.yaml$''']
+regexes = ['''--user "admin:\$\$\{ADMIN_PASSWORD\}"''']
