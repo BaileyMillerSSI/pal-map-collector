@@ -1,11 +1,10 @@
-﻿namespace Palmap.CollectorApi.src.Services
+using Palmap.PalworldApi.Models;
+
+namespace Palmap.CollectorApi.Services;
+
+internal interface ICollectorApiService
 {
-    public interface ICollectorApiService
-    {
-        Task<object> ReportPlayerLocations();
-
-        Task<object> ReportGameData();
-
-        Task<object> ReportServerSettings();
-    }
+    Task ReportPlayerLocations(PlayerListResponse players, CancellationToken cancellationToken = default);
+    Task ReportGameData(WorldActorSnapshotResponse snapshot, CancellationToken cancellationToken = default);
+    Task ReportServerSettings(ServerSettingsResponse settings, CancellationToken cancellationToken = default);
 }

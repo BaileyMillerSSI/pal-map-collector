@@ -1,0 +1,49 @@
+services:
+  palworld:
+    image: thijsvanloef/palworld-server-docker:latest
+    restart: unless-stopped
+    stop_grace_period: 30s
+    env_file:
+      - ./config/server.env
+      - ./config/palworld.env
+      - ./config/integrations.env
+      - ./config/mods.env
+    ports:
+      - "8211:8211/udp"
+      - "27015:27015/udp"
+      - "127.0.0.1:8212:8212/tcp"
+    volumes:
+      - ./palworld:/palworld/
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl --fail --silent --show-error
+          --user "admin:$${ADMIN_PASSWORD}"
+          "http://127.0.0.1:$${REST_API_PORT}/v1/api/info"
+          | jq -e '.version | strings | length > 0' >/dev/null
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 5m
+
+  collector:
+    image: palmap/palworld-map-collector:local
+    build:
+      context: .
+      dockerfile: Palmap.Collector/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 30s
+    env_file:
+      - ./config/collector.env
+    depends_on:
+      palworld:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080/tcp"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s

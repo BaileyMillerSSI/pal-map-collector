@@ -1,45 +1,31 @@
-﻿using Microsoft.Extensions.Options;
-using Palmap.CollectorApi.src.Configuration;
-using Palmap.CollectorApi.src.Services;
+using Microsoft.Extensions.Options;
+using Palmap.Collector.Health;
+using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Services;
+using Palmap.PalworldApi.Services;
 
-namespace Palmap.Collector.Services
+namespace Palmap.Collector.Services;
+
+internal sealed class PlayerLocationReporterTimedBackgroundService(
+    IPalworldApiServiceFactory palworldApiServiceFactory,
+    ICollectorApiService collectorApiService,
+    IOptionsMonitor<CollectorSettings> collectorSettings,
+    IPalworldApiHealthService palworldHealthService,
+    ICollectorDelay collectorDelay,
+    ILogger<PlayerLocationReporterTimedBackgroundService> logger)
+    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, logger)
 {
-    public class PlayerLocationReporterTimedBackgroundService(
-        ICollectorApiService collectorApiService,
-        IOptionsMonitor<CollectorSettings> collectorSettingsMonitor,
-        ILogger<PlayerLocationReporterTimedBackgroundService> logger) : BackgroundService
+    protected override int ReportIntervalMs => collectorSettings.CurrentValue.PlayerLocationUpdateIntervalMs;
+
+    protected override int FailureRetryIntervalMs => collectorSettings.CurrentValue.FailureRetryIntervalMs;
+
+    protected override string ReportDescription => "player locations";
+
+    internal override async Task ReportOnce(CancellationToken cancellationToken)
     {
-        private readonly ICollectorApiService _collectorApiService = collectorApiService;
-        private readonly IOptionsMonitor<CollectorSettings> _collectorSettingsMonitor = collectorSettingsMonitor;
-        private readonly ILogger<PlayerLocationReporterTimedBackgroundService> _logger = logger;
-
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-        {
-            _logger.LogInformation("{Service} is starting.", nameof(PlayerLocationReporterTimedBackgroundService));
-
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                try
-                {
-                    _logger.LogInformation("Reporting player locations...");
-
-                    await _collectorApiService.ReportPlayerLocations();
-
-                    _logger.LogInformation("Player locations reported successfully.");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "An error occurred while reporting player locations.");
-                }
-
-                var interval = _collectorSettingsMonitor.CurrentValue.PlayerLocationUpdateIntervalMs;
-
-                _logger.LogInformation("Waiting for {Interval} milliseconds before the next report.", interval);
-
-                await Task.Delay((int)interval, stoppingToken);
-            }
-
-            _logger.LogInformation("{Service} is stopping.", nameof(PlayerLocationReporterTimedBackgroundService));
-        }
+        using var palworldApiService = palworldApiServiceFactory.Create();
+        var players = await palworldApiService.PlayerList(cancellationToken);
+        await collectorApiService.ReportPlayerLocations(players, cancellationToken);
+        logger.LogInformation("Reported {PlayerCount} player locations.", players.Players.Count);
     }
 }

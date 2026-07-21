@@ -1,46 +1,39 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using Palmap.PalworldApi.src.Configuration;
-using Palmap.PalworldApi.src.Services;
-using Palmap.PalworldApi.src.Services.Internal;
-using Flurl;
+using Palmap.PalworldApi.Configuration;
+using Palmap.PalworldApi.Services;
+using Palmap.PalworldApi.Services.Internal;
 
-namespace Palmap.PalworldApi
+namespace Palmap.PalworldApi;
+
+public static class PalworldApiExtensions
 {
-    public static class PalworldApiExtensions
+    public static IHostApplicationBuilder AddPalworldApi(this IHostApplicationBuilder builder)
     {
-        public static IHostApplicationBuilder AddPalworldApi(this IHostApplicationBuilder builder)
-        {
-            // https://docs.palworldgame.com/api/rest-api/palwold-rest-api
-            /// <see cref="Palmap.PalworldApi.src.Configuration.PalworldApiSettings"/> Configure this
+        builder.Services
+            .AddOptions<PalworldApiSettings>()
+            .Bind(builder.Configuration.GetSection(PalworldApiSettings.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        builder.Services.AddSingleton<IValidateOptions<PalworldApiSettings>, PalworldApiSettingsValidator>();
 
-            // Validate IOptions
-            /*
-             * Palworld API
-             * PALWORLD_API_URL=
-             * PALWORLD_API_ADMIN_PASSWORD=
-             * PALWORLD_API_ADMIN_USERNAME=Admin
-             * PALWORLD_API_PORT=8212
-             * 
-             */
-
-            // Configure PalMap.PalworldApi.Client - HttpClientFactory -> Service creation with a pre-configured HttpClient ready to go for the API
-            // Configure default safety checks, backoff, retry, etc.
-
-            builder.Services.AddHttpClient<IPalworldApiService, PalworldApiService>((svp, client) =>
+        builder.Services
+            .AddHttpClient(PalworldApiSettings.HttpClientName, (serviceProvider, client) =>
             {
-                var settingsMonitor = svp.GetRequiredService<IOptionsMonitor<PalworldApiSettings>>();
-
-                client.BaseAddress = settingsMonitor.CurrentValue.Url.AppendPathSegment(PalworldApiSettings.ApiBase).ToUri();
+                var settings = serviceProvider.GetRequiredService<IOptionsMonitor<PalworldApiSettings>>().CurrentValue;
+                client.BaseAddress = new Uri(settings.BaseUrl!, PalworldApiSettings.ApiBase);
+                client.Timeout = TimeSpan.FromSeconds(30);
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
                 client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
                     "Basic",
                     Convert.ToBase64String(
-                        System.Text.Encoding.ASCII.GetBytes(
-                            $"{settingsMonitor.CurrentValue.Admin.Username}:{settingsMonitor.CurrentValue.Admin.Password}")));
-            });
+                        System.Text.Encoding.UTF8.GetBytes(
+                            $"{settings.Admin.Username}:{settings.Admin.Password}")));
+            })
+            .AddStandardResilienceHandler();
+        builder.Services.AddSingleton<IPalworldApiServiceFactory, PalworldApiServiceFactory>();
 
-            return builder;
-        }
+        return builder;
     }
 }

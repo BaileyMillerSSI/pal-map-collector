@@ -5,7 +5,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS base
 USER $APP_UID
 WORKDIR /app
 EXPOSE 8080
-EXPOSE 8081
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/health/ready || exit 1
 
 
 # This stage is used to build the service project

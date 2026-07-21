@@ -1,5 +1,8 @@
 <Solution>
-  <Folder Name="/Tests/" />
+  <Folder Name="/Tests/">
+    <Project Path="Palmap.IntegrationTests/Palmap.IntegrationTests.csproj" />
+    <Project Path="Palmap.UnitTests/Palmap.UnitTests.csproj" />
+  </Folder>
   <Project Path="Palmap.Collector/Palmap.Collector.csproj" />
   <Project Path="Palmap.CollectorApi/Palmap.CollectorApi.csproj" />
   <Project Path="Palmap.PalworldApi/Palmap.PalworldApi.csproj" />

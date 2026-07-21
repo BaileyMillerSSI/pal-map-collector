@@ -1,23 +1,16 @@
-﻿namespace Palmap.PalworldApi.src.Configuration
+using System.ComponentModel.DataAnnotations;
+
+namespace Palmap.PalworldApi.Configuration;
+
+internal sealed record PalworldApiSettings
 {
+    public const string SectionName = "PalworldApi";
+    public const string ApiBase = "v1/api/";
+    public const string HttpClientName = "PalworldApi";
 
-    internal record PalworldApiSettings
-    {
-        public string? Url { get; init; } = string.Empty;
+    [Required]
+    public Uri? BaseUrl { get; init; }
 
-        public const string ApiBase = "/v1/api";
-
-        public uint Port { get; init; } = 8212;
-
-        public PalworldAdminSettings Admin { get; init; } = new PalworldAdminSettings();
-
-
-    }
-
-    internal record PalworldAdminSettings
-    {
-        public string Username { get; init; } = "Admin";
-
-        public string Password { get; init; } = string.Empty;
-    }
+    [Required]
+    public PalworldAdminSettings Admin { get; init; } = new();
 }

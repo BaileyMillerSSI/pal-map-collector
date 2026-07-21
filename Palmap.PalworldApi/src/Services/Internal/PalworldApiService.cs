@@ -1,43 +1,66 @@
-﻿namespace Palmap.PalworldApi.src.Services.Internal
+using System.Net.Http.Json;
+using Palmap.PalworldApi.Models;
+using Polly.Timeout;
+
+namespace Palmap.PalworldApi.Services.Internal;
+
+internal sealed class PalworldApiService(HttpClient apiClient) : IPalworldApiService
 {
-    /// <summary>
-    /// https://docs.palworldgame.com/api/rest-api/palwold-rest-api
-    /// </summary>
-    /// <param name="apiClient"></param>
-    internal class PalworldApiService(HttpClient apiClient): IPalworldApiService
+    public Task<ServerInfoResponse> ServerInfo(CancellationToken cancellationToken = default) =>
+        Get<ServerInfoResponse>("info", cancellationToken);
+
+    public Task<PlayerListResponse> PlayerList(CancellationToken cancellationToken = default) =>
+        Get<PlayerListResponse>("players", cancellationToken);
+
+    public Task<ServerSettingsResponse> ServerSettings(CancellationToken cancellationToken = default) =>
+        Get<ServerSettingsResponse>("settings", cancellationToken);
+
+    public Task<WorldActorSnapshotResponse> WorldActorSnapshot(CancellationToken cancellationToken = default) =>
+        Get<WorldActorSnapshotResponse>("game-data", cancellationToken);
+
+    public Task<ServerMetricsResponse> ServerMetrics(CancellationToken cancellationToken = default) =>
+        Get<ServerMetricsResponse>("metrics", cancellationToken);
+
+    public async Task<bool> Ping(CancellationToken cancellationToken = default)
     {
-        private readonly HttpClient _apiClient = apiClient;
-
-        public Task<object> PlayerList()
+        try
         {
-            throw new NotImplementedException();
+            using var response = await apiClient.GetAsync("info", cancellationToken);
+            return response.IsSuccessStatusCode;
         }
-
-        public Task<object> ServerInfo()
+        catch (HttpRequestException)
         {
-            throw new NotImplementedException();
+            return false;
         }
-
-        public Task<object> ServerMetrics()
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new NotImplementedException();
+            return false;
         }
-
-        public Task<object> ServerSettings()
+        catch (TimeoutRejectedException)
         {
-            throw new NotImplementedException();
+            return false;
         }
+    }
 
-        public Task<object> WorldActorSnapshot()
+    public void Dispose() => apiClient.Dispose();
+
+    private async Task<T> Get<T>(string path, CancellationToken cancellationToken)
+    {
+        try
         {
-            throw new NotImplementedException();
+            using var response = await apiClient.GetAsync(path, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            return await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken)
+                ?? throw new HttpRequestException($"Palworld REST endpoint '{path}' returned an empty response body.");
         }
-
-        public async Task<bool> Ping()
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            var result = await _apiClient.GetAsync("/info");
-
-            return result.IsSuccessStatusCode;
+            throw new HttpRequestException($"Palworld REST endpoint '{path}' timed out.", exception);
+        }
+        catch (TimeoutRejectedException exception)
+        {
+            throw new HttpRequestException($"Palworld REST endpoint '{path}' timed out.", exception);
         }
     }
 }
