@@ -1,9 +1,11 @@
 using System.Collections;
 using System.ComponentModel.DataAnnotations;
+using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace Palmap.Protocol;
 
@@ -89,8 +91,26 @@ public static class SnapshotContractV1
         foreach (var player in envelope.Snapshot.Players?.Data ?? [])
         {
             if (player is null) errors.Add("$.snapshot.players.data: Entries must not be null.");
-            else ValidateLocation(player.Location, errors);
+            else
+            {
+                RejectIpAddress(player.Name, "$.snapshot.players.data[].name", errors);
+                ValidateLocation(player.Location, errors);
+            }
         }
+        foreach (var guild in envelope.Snapshot.World?.Data?.Guilds ?? [])
+        {
+            RejectIpAddress(guild.Name, "$.snapshot.world.data.guilds[].name", errors);
+            foreach (var @base in guild.Bases)
+                RejectIpAddress(@base.Label, "$.snapshot.world.data.guilds[].bases[].label", errors);
+        }
+        RejectIpAddress(envelope.Snapshot.World?.Data?.Stats.SourceTime, "$.snapshot.world.data.stats.sourceTime", errors);
+        RejectIpAddress(envelope.Snapshot.World?.Data?.Stats.InGameTime, "$.snapshot.world.data.stats.inGameTime", errors);
+        RejectIpAddress(envelope.Snapshot.Server?.Data?.Name, "$.snapshot.server.data.name", errors);
+        RejectIpAddress(envelope.Snapshot.Server?.Data?.Description, "$.snapshot.server.data.description", errors);
+        foreach (var platform in envelope.Snapshot.Server?.Data?.SupportedPlatforms ?? [])
+            RejectIpAddress(platform, "$.snapshot.server.data.supportedPlatforms[]", errors);
+        RejectIpAddress(envelope.Snapshot.Server?.Data?.Rules.Difficulty, "$.snapshot.server.data.rules.difficulty", errors);
+        RejectIpAddress(envelope.Snapshot.Server?.Data?.Rules.DeathPenalty, "$.snapshot.server.data.rules.deathPenalty", errors);
         ValidateRules(envelope.Snapshot.Server?.Data?.Rules, errors);
     }
 
@@ -126,6 +146,20 @@ public static class SnapshotContractV1
     }
 
     private static bool Finite(double? value) => value is not null && double.IsFinite(value.Value);
+
+    private static void RejectIpAddress(string? value, string path, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        foreach (Match match in Regex.Matches(value, @"[0-9A-Fa-f:.]+", RegexOptions.CultureInvariant))
+        {
+            var candidate = match.Value.Trim('[', ']', '(', ')', ',', ';', '!', '?', '.');
+            if ((candidate.Contains('.') || candidate.Contains(':')) && IPAddress.TryParse(candidate, out _))
+            {
+                errors.Add($"{path}: IP address literals are not allowed.");
+                return;
+            }
+        }
+    }
 
     private static void ValidateRules(PublicServerRules? rules, List<string> errors)
     {
