@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "collectorVersion": "1.0.0-rc.1",
+  "collectedAt": "2026-07-21T16:00:00+00:00",
+  "collectorEpoch": "8a9b39b4-7ef7-4aad-9a90-52d0fbcc8451",
+  "sequence": 0,
+  "snapshot": {
+    "players": { "status": { "state": "pending", "isStale": false, "lastAttemptedAt": null, "lastSuccessfulAt": null }, "data": null },
+    "world": { "status": { "state": "pending", "isStale": false, "lastAttemptedAt": null, "lastSuccessfulAt": null }, "data": null },
+    "server": { "status": { "state": "pending", "isStale": false, "lastAttemptedAt": null, "lastSuccessfulAt": null }, "data": null }
+  }
+}
