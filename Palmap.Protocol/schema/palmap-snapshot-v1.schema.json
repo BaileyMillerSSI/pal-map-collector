@@ -1,0 +1,795 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.palworld-map.invalid/snapshot/v1",
+  "title": "Palworld Map sanitized snapshot envelope v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "collectorVersion": {
+      "type": "string",
+      "pattern": "^\\d\u002B\\.\\d\u002B\\.\\d\u002B(?:[-\u002B][0-9A-Za-z.-]\u002B)?$"
+    },
+    "collectedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "collectorEpoch": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740990
+    },
+    "snapshot": {
+      "type": "object",
+      "properties": {
+        "players": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/sourceStatus"
+            },
+            "data": {
+              "type": [
+                "null",
+                "array"
+              ],
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 128
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "level": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "pingMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "guildId": {
+                    "type": [
+                      "null",
+                      "string"
+                    ],
+                    "minLength": 16,
+                    "maxLength": 128
+                  },
+                  "buildingCount": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ],
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "location": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "overworld",
+                          "instance",
+                          "unknown"
+                        ]
+                      },
+                      "layer": {
+                        "enum": [
+                          "palpagos",
+                          "world-tree",
+                          null
+                        ]
+                      },
+                      "x": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "y": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "stage": {
+                        "type": [
+                          "null",
+                          "string"
+                        ],
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "layer",
+                      "x",
+                      "y",
+                      "stage"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "name",
+                  "level",
+                  "pingMs",
+                  "guildId",
+                  "buildingCount",
+                  "location"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "data"
+          ]
+        },
+        "world": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/sourceStatus"
+            },
+            "data": {
+              "type": [
+                "null",
+                "object"
+              ],
+              "properties": {
+                "stats": {
+                  "type": "object",
+                  "properties": {
+                    "sourceTime": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "fps": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000
+                    },
+                    "averageFps": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000
+                    },
+                    "inGameDays": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ],
+                      "minimum": 0,
+                      "maximum": 2147483647
+                    },
+                    "inGameTime": {
+                      "type": [
+                        "null",
+                        "string"
+                      ],
+                      "maxLength": 128
+                    },
+                    "actorCounts": {
+                      "type": "object",
+                      "properties": {
+                        "players": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        },
+                        "companionPals": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        },
+                        "basePals": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        },
+                        "wildPals": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        },
+                        "npcs": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        },
+                        "palBoxes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        },
+                        "other": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "players",
+                        "companionPals",
+                        "basePals",
+                        "wildPals",
+                        "npcs",
+                        "palBoxes",
+                        "other"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "sourceTime",
+                    "fps",
+                    "averageFps",
+                    "inGameDays",
+                    "inGameTime",
+                    "actorCounts"
+                  ]
+                },
+                "guilds": {
+                  "maxLength": 1024,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 16,
+                        "maxLength": 128
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "onlinePlayerCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
+                      },
+                      "knownBuildingCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740990
+                      },
+                      "buildingCountComplete": {
+                        "type": "boolean"
+                      },
+                      "baseCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
+                      },
+                      "basePalCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
+                      },
+                      "unassignedBasePalCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
+                      },
+                      "totalLevel": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740990
+                      },
+                      "currentHp": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1000000000000000
+                      },
+                      "maxHp": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1000000000000000
+                      },
+                      "estimatedPower": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1000000000000000
+                      },
+                      "bases": {
+                        "maxLength": 128,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 16,
+                              "maxLength": 128
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            },
+                            "palCount": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 2147483647
+                            },
+                            "totalLevel": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740990
+                            },
+                            "currentHp": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1000000000000000
+                            },
+                            "maxHp": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1000000000000000
+                            },
+                            "estimatedPower": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1000000000000000
+                            },
+                            "position": {
+                              "type": [
+                                "null",
+                                "object"
+                              ],
+                              "properties": {
+                                "layer": {
+                                  "enum": [
+                                    "palpagos",
+                                    "world-tree"
+                                  ]
+                                },
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                }
+                              }
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "label",
+                            "palCount",
+                            "totalLevel",
+                            "currentHp",
+                            "maxHp",
+                            "estimatedPower",
+                            "position"
+                          ]
+                        }
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "name",
+                      "onlinePlayerCount",
+                      "knownBuildingCount",
+                      "buildingCountComplete",
+                      "baseCount",
+                      "basePalCount",
+                      "unassignedBasePalCount",
+                      "totalLevel",
+                      "currentHp",
+                      "maxHp",
+                      "estimatedPower",
+                      "bases"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "data"
+          ]
+        },
+        "server": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/sourceStatus"
+            },
+            "data": {
+              "type": [
+                "null",
+                "object"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "supportedPlatforms": {
+                  "maxLength": 32,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "maxPlayers": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                },
+                "maxPalsPerBase": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                },
+                "dayTimeSpeedRate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000
+                },
+                "nightTimeSpeedRate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000
+                },
+                "pvpEnabled": {
+                  "type": "boolean"
+                },
+                "rules": {
+                  "type": "object",
+                  "properties": {
+                    "difficulty": {
+                      "type": [
+                        "null",
+                        "string"
+                      ],
+                      "maxLength": 128
+                    },
+                    "experienceRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "palCaptureRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "palSpawnRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "workSpeedRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "eggHatchingHours": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "itemWeightRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "deathPenalty": {
+                      "type": [
+                        "null",
+                        "string"
+                      ],
+                      "maxLength": 128
+                    },
+                    "playerDamageDealtRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "playerDamageTakenRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "palDamageDealtRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "palDamageTakenRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "playerHungerRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "playerStaminaRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "palHungerRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "palStaminaRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "collectionDropRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "resourceHealthRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "resourceRespawnRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "enemyDropRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "buildingDamageRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "buildingDeteriorationRate": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "maxBasesPerGuild": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ]
+                    },
+                    "maxPlayersPerGuild": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ]
+                    },
+                    "maxBuildings": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ]
+                    },
+                    "hardcoreEnabled": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "fastTravelEnabled": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "invasionsEnabled": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clientModsAllowed": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "backupsEnabled": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "voiceChatEnabled": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "autosaveSeconds": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "supplyDropSeconds": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "difficulty",
+                    "experienceRate",
+                    "palCaptureRate",
+                    "palSpawnRate",
+                    "workSpeedRate",
+                    "eggHatchingHours",
+                    "itemWeightRate",
+                    "deathPenalty",
+                    "playerDamageDealtRate",
+                    "playerDamageTakenRate",
+                    "palDamageDealtRate",
+                    "palDamageTakenRate",
+                    "playerHungerRate",
+                    "playerStaminaRate",
+                    "palHungerRate",
+                    "palStaminaRate",
+                    "collectionDropRate",
+                    "resourceHealthRate",
+                    "resourceRespawnRate",
+                    "enemyDropRate",
+                    "buildingDamageRate",
+                    "buildingDeteriorationRate",
+                    "maxBasesPerGuild",
+                    "maxPlayersPerGuild",
+                    "maxBuildings",
+                    "hardcoreEnabled",
+                    "fastTravelEnabled",
+                    "invasionsEnabled",
+                    "clientModsAllowed",
+                    "backupsEnabled",
+                    "voiceChatEnabled",
+                    "autosaveSeconds",
+                    "supplyDropSeconds"
+                  ]
+                },
+                "publicAddress": {
+                  "type": [
+                    "null",
+                    "object"
+                  ],
+                  "properties": {
+                    "host": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "data"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "players",
+        "world",
+        "server"
+      ]
+    }
+  },
+  "$defs": {
+    "sourceStatus": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "pending",
+            "healthy",
+            "unauthorized",
+            "unavailable"
+          ]
+        },
+        "isStale": {
+          "type": "boolean"
+        },
+        "lastAttemptedAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        },
+        "lastSuccessfulAt": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "isStale",
+        "lastAttemptedAt",
+        "lastSuccessfulAt"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "collectorVersion",
+    "collectedAt",
+    "collectorEpoch",
+    "sequence",
+    "snapshot"
+  ]
+}

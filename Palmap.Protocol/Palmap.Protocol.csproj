@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Palmap.Protocol</PackageId>
+    <Version>1.0.0-rc.1</Version>
+    <Authors>Bailey Miller</Authors>
+    <Description>Versioned, privacy-safe wire contracts for Palmap collectors and ingest services.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>palworld;palmap;protocol</PackageTags>
+    <RepositoryUrl>https://github.com/BaileyMillerSSI/pal-map-collector</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="schema\palmap-snapshot-v1.schema.json" Pack="true" PackagePath="contentFiles\any\any\schema\" />
+    <None Include="fixtures\snapshot-v1.synthetic.json" Pack="true" PackagePath="contentFiles\any\any\fixtures\" />
+  </ItemGroup>
+</Project>
