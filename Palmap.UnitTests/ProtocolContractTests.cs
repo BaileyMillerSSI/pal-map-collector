@@ -84,6 +84,27 @@ public sealed class ProtocolContractTests
         Assert.Throws<SnapshotContractValidationException>(() => SnapshotContractV1.Validate(invalid));
     }
 
+    [Theory]
+    [InlineData("Explorer 198.51.100.4")]
+    [InlineData("Explorer [2001:db8::4]")]
+    public void IpLiteralsAreRejectedInsideAllowedFreeText(string name)
+    {
+        var pending = SnapshotContractV1.Deserialize(File.ReadAllBytes(FixturePath()));
+        var now = pending.CollectedAt;
+        var invalid = pending with
+        {
+            Snapshot = pending.Snapshot with
+            {
+                Players = new SnapshotSection<IReadOnlyList<PublicPlayer>>(
+                    new SourceStatus(SnapshotSourceState.Healthy, false, now, now),
+                    [new PublicPlayer("opaque-player-0001", name, 1, 2, null, 0,
+                        new PlayerLocation(PlayerLocationKind.Unknown, null, null, null, null))])
+            }
+        };
+
+        Assert.Throws<SnapshotContractValidationException>(() => SnapshotContractV1.Validate(invalid));
+    }
+
     private static string FixturePath() =>
         Path.Combine(AppContext.BaseDirectory, "fixtures", "snapshot-v1.synthetic.json");
 }
