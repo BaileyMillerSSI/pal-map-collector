@@ -28,4 +28,9 @@ internal sealed class GameDataReportTimedBackgroundService(
         await collectorApiService.ReportGameData(snapshot, cancellationToken);
         logger.LogInformation("Reported {ActorCount} world actors.", snapshot.ActorData.Count);
     }
+
+    protected override Task ReportFailure(
+        CollectorSourceFailure failure,
+        CancellationToken cancellationToken) =>
+        collectorApiService.ReportFailure(CollectorSourceSection.World, failure, cancellationToken);
 }

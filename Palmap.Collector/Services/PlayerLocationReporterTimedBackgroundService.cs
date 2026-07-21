@@ -28,4 +28,9 @@ internal sealed class PlayerLocationReporterTimedBackgroundService(
         await collectorApiService.ReportPlayerLocations(players, cancellationToken);
         logger.LogInformation("Reported {PlayerCount} player locations.", players.Players.Count);
     }
+
+    protected override Task ReportFailure(
+        CollectorSourceFailure failure,
+        CancellationToken cancellationToken) =>
+        collectorApiService.ReportFailure(CollectorSourceSection.Players, failure, cancellationToken);
 }

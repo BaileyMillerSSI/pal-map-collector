@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Palmap.Collector.Health;
 using Palmap.Collector.Services;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Services;
 
 namespace Palmap.UnitTests;
 
@@ -112,9 +113,10 @@ public sealed class ReporterAndHealthTests
         });
         var health = new StubPalworldApiHealthService();
         var delay = new RecordingCollectorDelay();
+        var collector = new RecordingCollectorApiService();
         var worker = new PlayerLocationReporterTimedBackgroundService(
             palworld,
-            new RecordingCollectorApiService(),
+            collector,
             options,
             health,
             delay,
@@ -123,6 +125,9 @@ public sealed class ReporterAndHealthTests
         await AssertScheduled(worker, delay, 77);
 
         Assert.Equal(1, health.MarkUnhealthyCallCount);
+        Assert.Equal(
+            (CollectorSourceSection.Players, CollectorSourceFailure.Unavailable),
+            Assert.Single(collector.Failures));
     }
 
     [Fact]

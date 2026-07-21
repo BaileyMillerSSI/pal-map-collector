@@ -11,6 +11,8 @@ internal sealed class RecordingCollectorApiService : ICollectorApiService
 
     public ServerSettingsResponse? Settings { get; private set; }
 
+    public List<(CollectorSourceSection Section, CollectorSourceFailure Failure)> Failures { get; } = [];
+
     public Task ReportPlayerLocations(PlayerListResponse players, CancellationToken cancellationToken = default)
     {
         Players = players;
@@ -26,6 +28,15 @@ internal sealed class RecordingCollectorApiService : ICollectorApiService
     public Task ReportServerSettings(ServerSettingsResponse settings, CancellationToken cancellationToken = default)
     {
         Settings = settings;
+        return Task.CompletedTask;
+    }
+
+    public Task ReportFailure(
+        CollectorSourceSection section,
+        CollectorSourceFailure failure,
+        CancellationToken cancellationToken = default)
+    {
+        Failures.Add((section, failure));
         return Task.CompletedTask;
     }
 }

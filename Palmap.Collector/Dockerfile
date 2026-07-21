@@ -16,6 +16,7 @@ WORKDIR /src
 COPY ["Palmap.Collector/Palmap.Collector.csproj", "Palmap.Collector/"]
 COPY ["Palmap.CollectorApi/Palmap.CollectorApi.csproj", "Palmap.CollectorApi/"]
 COPY ["Palmap.PalworldApi/Palmap.PalworldApi.csproj", "Palmap.PalworldApi/"]
+COPY ["Palmap.Protocol/Palmap.Protocol.csproj", "Palmap.Protocol/"]
 RUN dotnet restore "./Palmap.Collector/Palmap.Collector.csproj"
 COPY . .
 WORKDIR "/src/Palmap.Collector"

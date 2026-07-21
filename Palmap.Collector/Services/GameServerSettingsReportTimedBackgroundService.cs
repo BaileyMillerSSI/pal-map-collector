@@ -26,6 +26,11 @@ internal sealed class GameServerSettingsReportTimedBackgroundService(
         using var palworldApiService = palworldApiServiceFactory.Create();
         var settings = await palworldApiService.ServerSettings(cancellationToken);
         await collectorApiService.ReportServerSettings(settings, cancellationToken);
-        logger.LogInformation("Reported settings for {ServerName}.", settings.ServerName);
+        logger.LogInformation("Reported server settings.");
     }
+
+    protected override Task ReportFailure(
+        CollectorSourceFailure failure,
+        CancellationToken cancellationToken) =>
+        collectorApiService.ReportFailure(CollectorSourceSection.Server, failure, cancellationToken);
 }
