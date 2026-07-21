@@ -126,6 +126,14 @@ Optional integration-test overrides are `PALMAP_PALWORLD_URL` (default `http://1
 
 The live suite checks server info, players, settings, world actor data, metrics, rejected credentials, and both collector health endpoints.
 
+## Continuous integration and delivery
+
+The `CI/CD` GitHub Actions workflow runs for pull requests targeting `main`. It verifies formatting, restores and builds the full solution in Release mode with warnings treated as errors, runs the normal test suite, uploads TRX test results, and builds the production container without publishing it. Configure both `.NET build and test` and `Container build / publish` as required branch-protection checks for `main`.
+
+After the same checks pass on a push to `main`, the workflow publishes the image to `ghcr.io/<owner>/<repository>` using the repository's built-in `GITHUB_TOKEN`. Each image receives the tags `main`, `latest`, and `sha-<full-commit-sha>`. The SHA tag is immutable deployment input; `main` and `latest` track the newest successful main-branch build. Published images also include OCI metadata, SBOM/provenance data, and a GitHub artifact attestation.
+
+No registry secret is required. The workflow grants `packages: write` only to the container job. Repository or organization policy must allow GitHub Actions to create and write packages; package visibility and access can then be managed from the package settings in GitHub.
+
 ## Troubleshooting
 
 - `docker compose up --wait` may take several minutes on first boot while Steam downloads Palworld. Follow progress with `docker compose logs -f palworld`.
