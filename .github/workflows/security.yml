@@ -1,0 +1,35 @@
+name: Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      scan-history:
+        description: Scan every reachable Git revision
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Scan tracked tree
+        shell: pwsh
+        run: ./scripts/Test-Secrets.ps1
+      - name: Scan full history
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.scan-history }}
+        shell: pwsh
+        run: ./scripts/Test-Secrets.ps1 -History
