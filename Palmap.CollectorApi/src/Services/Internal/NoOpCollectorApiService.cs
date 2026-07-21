@@ -1,27 +1,25 @@
-﻿namespace Palmap.CollectorApi.src.Services.Internal
+using Microsoft.Extensions.Logging;
+using Palmap.PalworldApi.Models;
+
+namespace Palmap.CollectorApi.Services.Internal;
+
+internal sealed class NoOpCollectorApiService(ILogger<NoOpCollectorApiService> logger) : ICollectorApiService
 {
-    internal class NoOpCollectorApiService(HttpClient apiClient) : ICollectorApiService
+    public Task ReportPlayerLocations(PlayerListResponse players, CancellationToken cancellationToken = default)
     {
-        private readonly HttpClient _apiClient = apiClient;
+        logger.LogDebug("Collected {PlayerCount} player locations; no collector backend is configured.", players.Players.Count);
+        return Task.CompletedTask;
+    }
 
-        public Task<object> ReportPlayerLocations()
-        {
-            throw new NotImplementedException();
-        }
+    public Task ReportGameData(WorldActorSnapshotResponse snapshot, CancellationToken cancellationToken = default)
+    {
+        logger.LogDebug("Collected {ActorCount} world actors; no collector backend is configured.", snapshot.ActorData.Count);
+        return Task.CompletedTask;
+    }
 
-        public Task<object> ReportGameData()
-        {
-            throw new NotImplementedException();
-        }
-
-        public Task<object> ReportServerSettings()
-        {
-            throw new NotImplementedException();
-        }
-
-        public Task<object> Authenticate()
-        {
-            throw new NotImplementedException();
-        }
+    public Task ReportServerSettings(ServerSettingsResponse settings, CancellationToken cancellationToken = default)
+    {
+        logger.LogDebug("Collected settings for {ServerName}; no collector backend is configured.", settings.ServerName);
+        return Task.CompletedTask;
     }
 }
