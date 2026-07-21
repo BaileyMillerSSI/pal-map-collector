@@ -1,4 +1,6 @@
+using System.Net;
 using Palmap.Collector.Health;
+using Palmap.CollectorApi.Services;
 
 namespace Palmap.Collector.Services;
 
@@ -14,6 +16,10 @@ internal abstract class TimedReporterBackgroundService(
     protected abstract string ReportDescription { get; }
 
     internal abstract Task ReportOnce(CancellationToken cancellationToken);
+
+    protected abstract Task ReportFailure(
+        CollectorSourceFailure failure,
+        CancellationToken cancellationToken);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -38,7 +44,11 @@ internal abstract class TimedReporterBackgroundService(
                     palworldHealthService.MarkUnhealthy();
                 }
 
-                logger.LogError(exception, "An error occurred while reporting {ReportDescription}.", ReportDescription);
+                await ReportFailure(ClassifySourceFailure(exception), stoppingToken);
+                logger.LogError(
+                    "An error occurred while reporting {ReportDescription} ({ExceptionType}).",
+                    ReportDescription,
+                    exception.GetType().Name);
 
                 try
                 {
@@ -53,4 +63,12 @@ internal abstract class TimedReporterBackgroundService(
 
         logger.LogInformation("{Service} is stopping.", GetType().Name);
     }
+
+    internal static CollectorSourceFailure ClassifySourceFailure(Exception exception) =>
+        exception is HttpRequestException
+        {
+            StatusCode: HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+        }
+            ? CollectorSourceFailure.Unauthorized
+            : CollectorSourceFailure.Unavailable;
 }
