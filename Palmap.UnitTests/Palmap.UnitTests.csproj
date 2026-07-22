@@ -21,6 +21,13 @@
     <ProjectReference Include="..\Palmap.Collector\Palmap.Collector.csproj" />
     <ProjectReference Include="..\Palmap.CollectorApi\Palmap.CollectorApi.csproj" />
     <ProjectReference Include="..\Palmap.PalworldApi\Palmap.PalworldApi.csproj" />
+    <ProjectReference Include="..\Palmap.Protocol\Palmap.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\Palmap.Protocol\fixtures\snapshot-v1.synthetic.json"
+          Link="fixtures\snapshot-v1.synthetic.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

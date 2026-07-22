@@ -6,4 +6,5 @@
   <Project Path="Palmap.Collector/Palmap.Collector.csproj" />
   <Project Path="Palmap.CollectorApi/Palmap.CollectorApi.csproj" />
   <Project Path="Palmap.PalworldApi/Palmap.PalworldApi.csproj" />
+  <Project Path="Palmap.Protocol/Palmap.Protocol.csproj" />
 </Solution>
