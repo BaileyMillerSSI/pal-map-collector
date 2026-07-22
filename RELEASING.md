@@ -19,7 +19,14 @@ Collector images and `Palmap.Protocol` have independent release versions. `vMAJO
 
 Until `Palmap.Protocol/Palmap.Protocol.csproj` exists, the protocol job reports a deliberate skip. Once it exists, every workflow run packs and validates the package, including its compiled assembly, v1 JSON Schema, and synthetic fixture.
 
-A protocol package is published to NuGet.org only from an explicit `protocol-vMAJOR.MINOR.PATCH[-prerelease]` tag. Configure the `NUGET_API_KEY` Actions secret before creating that tag. A protocol-tagged run fails instead of silently omitting the package when the project exists but the key is unavailable.
+A protocol package is published to NuGet.org only from an explicit `protocol-vMAJOR.MINOR.PATCH[-prerelease]` tag. Publishing uses NuGet.org trusted publishing: the release job exchanges GitHub's OIDC token for a short-lived API key and no long-lived NuGet credential is stored in GitHub.
+
+Before creating the first Protocol tag:
+
+1. In the owning NuGet.org account, create a trusted-publishing policy for GitHub owner `BaileyMillerSSI`, repository `pal-map-collector`, and workflow file `ci.yml`. Leave the environment empty because this workflow does not use a GitHub environment.
+2. Set the repository Actions variable `NUGET_USER` to the NuGet.org profile name (not an email address).
+
+A protocol-tagged run fails instead of silently omitting the package when the variable or matching trusted-publishing policy is unavailable.
 
 ## Collector release checklist
 
@@ -29,4 +36,4 @@ A protocol package is published to NuGet.org only from an explicit `protocol-vMA
 4. Create and push an annotated `vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-prerelease` tag.
 5. Verify the published image manifest lists both `linux/amd64` and `linux/arm64`, then verify its attestations.
 
-For a protocol release, separately verify the package contract and create a `protocol-vMAJOR.MINOR.PATCH[-prerelease]` tag after confirming `NUGET_API_KEY` is configured.
+For a protocol release, separately verify the package contract and create a `protocol-vMAJOR.MINOR.PATCH[-prerelease]` tag after confirming the NuGet.org trusted-publishing policy and `NUGET_USER` repository variable are configured.
