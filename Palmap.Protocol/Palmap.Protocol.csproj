@@ -17,7 +17,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="/" />
-    <None Include="schema\palmap-snapshot-v1.schema.json" Pack="true" PackagePath="contentFiles\any\any\schema\" />
-    <None Include="fixtures\snapshot-v1.synthetic.json" Pack="true" PackagePath="contentFiles\any\any\fixtures\" />
+    <None Include="schema/palmap-snapshot-v1.schema.json" Pack="true" PackagePath="contentFiles/any/any/schema/" />
+    <None Include="fixtures/snapshot-v1.synthetic.json" Pack="true" PackagePath="contentFiles/any/any/fixtures/" />
   </ItemGroup>
 </Project>
