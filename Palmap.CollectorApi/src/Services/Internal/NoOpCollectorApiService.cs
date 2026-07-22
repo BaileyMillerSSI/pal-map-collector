@@ -19,7 +19,12 @@ internal sealed class NoOpCollectorApiService(ILogger<NoOpCollectorApiService> l
 
     public Task ReportServerSettings(ServerSettingsResponse settings, CancellationToken cancellationToken = default)
     {
-        logger.LogDebug("Collected settings for {ServerName}; no collector backend is configured.", settings.ServerName);
+        logger.LogDebug("Collected server settings; no collector backend is configured.");
         return Task.CompletedTask;
     }
+
+    public Task ReportFailure(
+        CollectorSourceSection section,
+        CollectorSourceFailure failure,
+        CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
