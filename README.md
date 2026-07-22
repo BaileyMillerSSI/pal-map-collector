@@ -130,7 +130,9 @@ The live suite checks server info, players, settings, world actor data, metrics,
 
 The `CI/CD` GitHub Actions workflow runs for pull requests targeting `main`. It verifies formatting, restores and builds the full solution in Release mode with warnings treated as errors, runs the normal test suite, uploads TRX test results, and builds the production container without publishing it. Configure both `.NET build and test` and `Container build / publish` as required branch-protection checks for `main`.
 
-After the same checks pass on a push to `main`, the workflow publishes the image to `ghcr.io/<owner>/<repository>` using the repository's built-in `GITHUB_TOKEN`. Each image receives the tags `main`, `latest`, and `sha-<full-commit-sha>`. The SHA tag is immutable deployment input; `main` and `latest` track the newest successful main-branch build. Published images also include OCI metadata, SBOM/provenance data, and a GitHub artifact attestation.
+The container job builds and runs `/health/live` for both `linux/amd64` and `linux/arm64` on pull requests and pushes to `main`. ARM64 is exercised through QEMU on the GitHub-hosted runner, and pull requests never publish images.
+
+After those checks pass on a push to `main`, the workflow publishes a multi-architecture image to `ghcr.io/<owner>/<repository>` with only the immutable `sha-<full-commit-sha>` tag. Collector release tags publish matching semantic image tags; `latest` moves only as part of a separately authorized stable release and never for a prerelease or ordinary `main` build. The existing legacy `latest` predates this multi-architecture policy and is not a recommended deployment input. Published images include OCI metadata, SBOM/provenance data, and a GitHub artifact attestation. See [RELEASING.md](RELEASING.md) for the exact collector image and independent `Palmap.Protocol` release policies.
 
 No registry secret is required. The workflow grants `packages: write` only to the container job. Repository or organization policy must allow GitHub Actions to create and write packages; package visibility and access can then be managed from the package settings in GitHub.
 
