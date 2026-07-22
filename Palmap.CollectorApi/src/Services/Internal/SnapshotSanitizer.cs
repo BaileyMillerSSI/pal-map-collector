@@ -155,7 +155,7 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
         Nonnegative(response.DayTimeSpeedRate);
         Nonnegative(response.NightTimeSpeedRate);
         Require(response.ServerPlayerMaxNum >= 0 && response.BaseCampWorkerMaxNum >= 0 &&
-            response.BaseCampMaxNum >= 0 && response.GuildPlayerMaxNum >= 0 && response.DropItemMaxNum >= 0);
+            response.BaseCampMaxNum >= 0 && response.GuildPlayerMaxNum >= 0);
         var platforms = (response.AllowConnectPlatform ?? string.Empty)
             .Replace("(", string.Empty, StringComparison.Ordinal)
             .Replace(")", string.Empty, StringComparison.Ordinal)
@@ -188,7 +188,7 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
             Checked(response.BuildObjectDeteriorationDamageRate),
             response.BaseCampMaxNum,
             response.GuildPlayerMaxNum,
-            response.DropItemMaxNum,
+            null,
             null,
             response.EnableFastTravel,
             response.EnableInvaderEnemy,

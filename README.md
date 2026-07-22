@@ -69,9 +69,9 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `PalworldApi:BaseUrl` | `http://localhost:8212` | Palworld REST origin, including TCP port 8212 |
 | `PalworldApi:Admin:Username` | `admin` | Palworld's REST Basic-auth username |
 | `PalworldApi:Admin:Password` | none | REST admin password; required at startup |
-| `PalmapIngest:Endpoint` | none | Absolute Palmap snapshot v1 ingest URL; required at startup |
-| `PalmapIngest:ClientId` | none | Issued Server/Client ID used for HTTP Basic authentication |
-| `PalmapIngest:ClientSecret` | none | Issued client secret used for HTTP Basic authentication |
+| `PalmapIngest:Endpoint` | none | Absolute Palmap snapshot v1 ingest URL without user-info, query, or fragment; required at startup |
+| `PalmapIngest:ClientId` | none | Issued 20-to-64-character Server/Client ID: `pmc_` plus 16 to 60 base64url characters |
+| `PalmapIngest:ClientSecret` | none | Issued base64url client secret used for HTTP Basic authentication |
 | `PalmapIngest:PrivacyKey` | none | Unique 32-byte key encoded as base64; used only to derive opaque identifiers |
 | `PalmapIngest:AllowInsecureHttp` | `false` | Permit HTTP only when the process also runs in `Development` |
 | `PalmapIngest:RequestTimeoutMs` | `20000` | Timeout for one ingest request |

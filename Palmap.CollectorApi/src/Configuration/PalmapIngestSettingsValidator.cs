@@ -1,11 +1,19 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using System.Text.RegularExpressions;
 
 namespace Palmap.CollectorApi.Configuration;
 
 internal sealed class PalmapIngestSettingsValidator(IHostEnvironment environment)
     : IValidateOptions<PalmapIngestSettings>
 {
+    private static readonly Regex ClientIdPattern = new(
+        @"^pmc_[A-Za-z0-9_-]{16,60}$",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+    private static readonly Regex ClientSecretPattern = new(
+        @"^[A-Za-z0-9_-]{32,128}$",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+
     public ValidateOptionsResult Validate(string? name, PalmapIngestSettings settings)
     {
         var errors = new List<string>();
@@ -14,15 +22,30 @@ internal sealed class PalmapIngestSettingsValidator(IHostEnvironment environment
         {
             errors.Add("PalmapIngest:Endpoint must be an absolute HTTP or HTTPS URL.");
         }
-        else if (endpoint.Scheme == Uri.UriSchemeHttp &&
-            !(environment.IsDevelopment() && settings.AllowInsecureHttp))
+        else
         {
-            errors.Add("An HTTP PalmapIngest:Endpoint requires Development and PalmapIngest:AllowInsecureHttp=true.");
+            if (!string.IsNullOrEmpty(endpoint.UserInfo) ||
+                !string.IsNullOrEmpty(endpoint.Query) ||
+                !string.IsNullOrEmpty(endpoint.Fragment))
+            {
+                errors.Add("PalmapIngest:Endpoint cannot contain user information, a query, or a fragment.");
+            }
+
+            if (endpoint.Scheme == Uri.UriSchemeHttp &&
+                !(environment.IsDevelopment() && settings.AllowInsecureHttp))
+            {
+                errors.Add("An HTTP PalmapIngest:Endpoint requires Development and PalmapIngest:AllowInsecureHttp=true.");
+            }
         }
 
-        if (settings.ClientId?.Contains(':', StringComparison.Ordinal) == true)
+        if (!ClientIdPattern.IsMatch(settings.ClientId ?? string.Empty))
         {
-            errors.Add("PalmapIngest:ClientId cannot contain a colon.");
+            errors.Add("PalmapIngest:ClientId must contain 20 to 64 characters total: 'pmc_' followed by 16 to 60 base64url characters.");
+        }
+
+        if (!ClientSecretPattern.IsMatch(settings.ClientSecret ?? string.Empty))
+        {
+            errors.Add("PalmapIngest:ClientSecret must contain 32 to 128 base64url characters and cannot contain a colon.");
         }
 
         if (!TryDecodePrivacyKey(settings.PrivacyKey, out var key) || key.Length != 32)

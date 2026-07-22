@@ -18,6 +18,9 @@ namespace Palmap.UnitTests;
 
 public sealed class CollectorIngestTests
 {
+    private const string ValidClientId = "pmc_AAAAAAAAAAAAAAAAAAAA";
+    private const string ValidClientSecret = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+
     [Fact]
     public void IngestOptionsBindThroughNormalConfigurationAndRequireExplicitDevelopmentHttp()
     {
@@ -32,7 +35,7 @@ public sealed class CollectorIngestTests
 
         var settings = developmentHost.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
 
-        Assert.Equal("synthetic-client", settings.ClientId);
+        Assert.Equal(ValidClientId, settings.ClientId);
         Assert.IsType<SnapshotCollectorApiService>(developmentHost.Services.GetRequiredService<ICollectorApiService>());
 
         var production = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
@@ -67,6 +70,80 @@ public sealed class CollectorIngestTests
         });
     }
 
+    [Theory]
+    [InlineData("https://user@ingest.example.test/api/ingest/v1/snapshots")]
+    [InlineData("https://ingest.example.test/api/ingest/v1/snapshots?server=synthetic")]
+    [InlineData("https://ingest.example.test/api/ingest/v1/snapshots#fragment")]
+    public void IngestEndpointRejectsUserInfoQueryAndFragment(string endpoint)
+    {
+        AssertInvalidIngestConfiguration(configuration =>
+            AddValidIngestConfiguration(configuration, endpoint));
+    }
+
+    [Theory]
+    [InlineData("pmc_too-short", ValidClientSecret)]
+    [InlineData("not_pmc_AAAAAAAAAAAAAAAAAAAA", ValidClientSecret)]
+    [InlineData("pmc_AAAAAAAAAAAAAAAAAAA:", ValidClientSecret)]
+    [InlineData(ValidClientId, "too-short")]
+    [InlineData(ValidClientId, "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB:")]
+    [InlineData(ValidClientId, "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=")]
+    public void IngestCredentialsMustMatchHostedBasicFormat(string clientId, string clientSecret)
+    {
+        AssertInvalidIngestConfiguration(configuration =>
+        {
+            AddValidIngestConfiguration(
+                configuration,
+                "https://ingest.example.test/api/ingest/v1/snapshots");
+            configuration["PalmapIngest:ClientId"] = clientId;
+            configuration["PalmapIngest:ClientSecret"] = clientSecret;
+        });
+    }
+
+    [Fact]
+    public void IngestCredentialLengthsAreBounded()
+    {
+        AssertInvalidIngestConfiguration(configuration =>
+        {
+            AddValidIngestConfiguration(
+                configuration,
+                "https://ingest.example.test/api/ingest/v1/snapshots");
+            configuration["PalmapIngest:ClientId"] = $"pmc_{new string('A', 15)}";
+        });
+        AssertInvalidIngestConfiguration(configuration =>
+        {
+            AddValidIngestConfiguration(
+                configuration,
+                "https://ingest.example.test/api/ingest/v1/snapshots");
+            configuration["PalmapIngest:ClientId"] = $"pmc_{new string('A', 61)}";
+        });
+        AssertInvalidIngestConfiguration(configuration =>
+        {
+            AddValidIngestConfiguration(
+                configuration,
+                "https://ingest.example.test/api/ingest/v1/snapshots");
+            configuration["PalmapIngest:ClientSecret"] = new string('B', 129);
+        });
+    }
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(60)]
+    public void IngestClientIdAcceptsHostedBoundaryLengths(int suffixLength)
+    {
+        var expectedClientId = $"pmc_{new string('A', suffixLength)}";
+        var builder = Host.CreateApplicationBuilder();
+        AddValidIngestConfiguration(
+            builder.Configuration,
+            "https://ingest.example.test/api/ingest/v1/snapshots");
+        builder.Configuration["PalmapIngest:ClientId"] = expectedClientId;
+        builder.AddCollectorApi();
+        using var host = builder.Build();
+
+        var settings = host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
+
+        Assert.Equal(expectedClientId, settings.ClientId);
+    }
+
     [Fact]
     public async Task CollectorBuildsFullAllowlistedSnapshotAndRetainsFailedSection()
     {
@@ -96,6 +173,7 @@ public sealed class CollectorIngestTests
         var guild = Assert.Single(complete.Snapshot.World.Data!.Guilds);
         Assert.Equal(guild.Id, player.GuildId);
         Assert.Equal(1, Assert.Single(guild.Bases).PalCount);
+        Assert.Null(complete.Snapshot.Server.Data!.Rules.MaxBuildings);
         Assert.DoesNotContain("raw-player-id", json, StringComparison.Ordinal);
         Assert.DoesNotContain("raw-user-id", json, StringComparison.Ordinal);
         Assert.DoesNotContain("raw-guild-id", json, StringComparison.Ordinal);
@@ -199,7 +277,7 @@ public sealed class CollectorIngestTests
         Assert.Equal(stable, captured);
         Assert.Equal("Basic", authorization?.Scheme);
         Assert.Equal(
-            Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("synthetic-client:synthetic-secret")),
+            Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{ValidClientId}:{ValidClientSecret}")),
             authorization?.Parameter);
 
         using var timedOutClient = new HttpClient(new AsyncHandler((_, _) => throw new TaskCanceledException()));
@@ -225,16 +303,16 @@ public sealed class CollectorIngestTests
     private static void AddValidIngestConfiguration(IConfiguration configuration, string endpoint)
     {
         configuration["PalmapIngest:Endpoint"] = endpoint;
-        configuration["PalmapIngest:ClientId"] = "synthetic-client";
-        configuration["PalmapIngest:ClientSecret"] = "synthetic-secret";
+        configuration["PalmapIngest:ClientId"] = ValidClientId;
+        configuration["PalmapIngest:ClientSecret"] = ValidClientSecret;
         configuration["PalmapIngest:PrivacyKey"] = Convert.ToBase64String(Enumerable.Range(0, 32).Select(value => (byte)value).ToArray());
     }
 
     private static PalmapIngestSettings ValidSettings() => new()
     {
         Endpoint = "https://ingest.example.test/api/ingest/v1/snapshots",
-        ClientId = "synthetic-client",
-        ClientSecret = "synthetic-secret",
+        ClientId = ValidClientId,
+        ClientSecret = ValidClientSecret,
         PrivacyKey = Convert.ToBase64String(Enumerable.Range(0, 32).Select(value => (byte)value).ToArray())
     };
 
@@ -273,6 +351,7 @@ public sealed class CollectorIngestTests
         ServerName = "Synthetic",
         ServerDescription = "Join 198.51.100.4",
         ServerPlayerMaxNum = 32,
+        DropItemMaxNum = 777,
         BaseCampWorkerMaxNum = 15,
         BaseCampMaxNum = 3,
         GuildPlayerMaxNum = 20,
@@ -288,6 +367,19 @@ public sealed class CollectorIngestTests
 
     private static string FixturePath() =>
         Path.Combine(AppContext.BaseDirectory, "fixtures", "snapshot-v1.synthetic.json");
+
+    private static void AssertInvalidIngestConfiguration(Action<IConfiguration> configure)
+    {
+        var builder = Host.CreateApplicationBuilder();
+        configure(builder.Configuration);
+        builder.AddCollectorApi();
+        using var host = builder.Build();
+
+        Assert.Throws<OptionsValidationException>(() =>
+        {
+            _ = host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
+        });
+    }
 
     private sealed class HttpClientFactory(HttpClient client) : IHttpClientFactory
     {
