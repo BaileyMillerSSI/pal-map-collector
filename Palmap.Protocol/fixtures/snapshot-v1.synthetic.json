@@ -3,10 +3,176 @@
   "collectorVersion": "1.0.0-rc.1",
   "collectedAt": "2026-07-21T16:00:00+00:00",
   "collectorEpoch": "8a9b39b4-7ef7-4aad-9a90-52d0fbcc8451",
-  "sequence": 0,
+  "sequence": 42,
   "snapshot": {
-    "players": { "status": { "state": "pending", "isStale": false, "lastAttemptedAt": null, "lastSuccessfulAt": null }, "data": null },
-    "world": { "status": { "state": "pending", "isStale": false, "lastAttemptedAt": null, "lastSuccessfulAt": null }, "data": null },
-    "server": { "status": { "state": "pending", "isStale": false, "lastAttemptedAt": null, "lastSuccessfulAt": null }, "data": null }
+    "players": {
+      "status": {
+        "state": "healthy",
+        "isStale": false,
+        "lastAttemptedAt": "2026-07-21T16:00:00+00:00",
+        "lastSuccessfulAt": "2026-07-21T16:00:00+00:00"
+      },
+      "data": [
+        {
+          "id": "ply_synthetic_00000001",
+          "name": "Synthetic Explorer",
+          "level": 31,
+          "pingMs": 24,
+          "guildId": "gld_synthetic_00000001",
+          "buildingCount": 12,
+          "location": {
+            "kind": "overworld",
+            "layer": "palpagos",
+            "x": 123.5,
+            "y": -456.25,
+            "stage": null
+          }
+        },
+        {
+          "id": "ply_synthetic_00000002",
+          "name": "Synthetic Delver",
+          "level": 22,
+          "pingMs": 35,
+          "guildId": "gld_synthetic_00000001",
+          "buildingCount": null,
+          "location": {
+            "kind": "instance",
+            "layer": null,
+            "x": null,
+            "y": null,
+            "stage": "instance"
+          }
+        },
+        {
+          "id": "ply_synthetic_00000003",
+          "name": "Synthetic Traveler",
+          "level": 9,
+          "pingMs": 48,
+          "guildId": null,
+          "buildingCount": 0,
+          "location": {
+            "kind": "unknown",
+            "layer": null,
+            "x": null,
+            "y": null,
+            "stage": null
+          }
+        }
+      ]
+    },
+    "world": {
+      "status": {
+        "state": "healthy",
+        "isStale": false,
+        "lastAttemptedAt": "2026-07-21T15:59:58+00:00",
+        "lastSuccessfulAt": "2026-07-21T15:59:58+00:00"
+      },
+      "data": {
+        "stats": {
+          "sourceTime": "Day 42 14:30",
+          "fps": 59.8,
+          "averageFps": 59.4,
+          "inGameDays": 42,
+          "inGameTime": "14:30",
+          "actorCounts": {
+            "players": 3,
+            "companionPals": 4,
+            "basePals": 8,
+            "wildPals": 120,
+            "npcs": 16,
+            "palBoxes": 2,
+            "other": 5
+          }
+        },
+        "guilds": [
+          {
+            "id": "gld_synthetic_00000001",
+            "name": "Synthetic Guild",
+            "onlinePlayerCount": 2,
+            "knownBuildingCount": 37,
+            "buildingCountComplete": false,
+            "baseCount": 1,
+            "basePalCount": 8,
+            "unassignedBasePalCount": 1,
+            "totalLevel": 180,
+            "currentHp": 7200.5,
+            "maxHp": 8000,
+            "estimatedPower": 9450.75,
+            "bases": [
+              {
+                "id": "bas_synthetic_00000001",
+                "label": "Synthetic Base",
+                "palCount": 8,
+                "totalLevel": 180,
+                "currentHp": 7200.5,
+                "maxHp": 8000,
+                "estimatedPower": 9450.75,
+                "position": {
+                  "layer": "world-tree",
+                  "x": -88.25,
+                  "y": 204.75
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "server": {
+      "status": {
+        "state": "healthy",
+        "isStale": false,
+        "lastAttemptedAt": "2026-07-21T15:59:55+00:00",
+        "lastSuccessfulAt": "2026-07-21T15:59:55+00:00"
+      },
+      "data": {
+        "name": "Synthetic Palworld Server",
+        "description": "Synthetic fixture data for compatibility testing",
+        "supportedPlatforms": [
+          "Steam",
+          "Xbox"
+        ],
+        "maxPlayers": 32,
+        "maxPalsPerBase": 20,
+        "dayTimeSpeedRate": 1,
+        "nightTimeSpeedRate": 1,
+        "pvpEnabled": false,
+        "rules": {
+          "difficulty": "Normal",
+          "experienceRate": 1,
+          "palCaptureRate": 1,
+          "palSpawnRate": 1,
+          "workSpeedRate": 1,
+          "eggHatchingHours": 2,
+          "itemWeightRate": 1,
+          "deathPenalty": "Item",
+          "playerDamageDealtRate": 1,
+          "playerDamageTakenRate": 1,
+          "palDamageDealtRate": 1,
+          "palDamageTakenRate": 1,
+          "playerHungerRate": 1,
+          "playerStaminaRate": 1,
+          "palHungerRate": 1,
+          "palStaminaRate": 1,
+          "collectionDropRate": 1,
+          "resourceHealthRate": 1,
+          "resourceRespawnRate": 1,
+          "enemyDropRate": 1,
+          "buildingDamageRate": 1,
+          "buildingDeteriorationRate": 1,
+          "maxBasesPerGuild": 4,
+          "maxPlayersPerGuild": 20,
+          "maxBuildings": null,
+          "hardcoreEnabled": false,
+          "fastTravelEnabled": true,
+          "invasionsEnabled": true,
+          "clientModsAllowed": false,
+          "backupsEnabled": true,
+          "voiceChatEnabled": true,
+          "autosaveSeconds": 30,
+          "supplyDropSeconds": 180
+        }
+      }
+    }
   }
 }

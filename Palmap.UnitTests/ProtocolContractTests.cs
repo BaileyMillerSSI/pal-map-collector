@@ -13,8 +13,13 @@ public sealed class ProtocolContractTests
         var serialized = SnapshotContractV1.SerializeToUtf8Bytes(snapshot);
 
         Assert.Equal(SnapshotSchemaVersions.V1, snapshot.SchemaVersion);
-        Assert.Equal(snapshot, SnapshotContractV1.Deserialize(serialized));
-        Assert.Equal(serialized, SnapshotContractV1.SerializeToUtf8Bytes(SnapshotContractV1.Deserialize(serialized)));
+        Assert.Equal(3, Assert.IsAssignableFrom<IReadOnlyList<PublicPlayer>>(snapshot.Snapshot.Players.Data).Count);
+        var world = Assert.IsType<PublicWorldData>(snapshot.Snapshot.World.Data);
+        Assert.Single(world.Guilds);
+        Assert.Single(world.Guilds[0].Bases);
+        Assert.IsType<PublicServerDetails>(snapshot.Snapshot.Server.Data);
+        var roundTripped = SnapshotContractV1.Deserialize(serialized);
+        Assert.Equal(serialized, SnapshotContractV1.SerializeToUtf8Bytes(roundTripped));
     }
 
     [Theory]
@@ -23,10 +28,11 @@ public sealed class ProtocolContractTests
     [InlineData("ip", "198.51.100.4")]
     public void UnknownAndPrivateFieldsAreRejected(string field, string value)
     {
-        var json = File.ReadAllText(FixturePath())
-            .Replace("\"sequence\": 0", $"\"sequence\": 0, \"{field}\": \"{value}\"", StringComparison.Ordinal);
+        var root = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        root[field] = value;
 
-        Assert.Throws<SnapshotContractValidationException>(() => SnapshotContractV1.Deserialize(json));
+        Assert.Throws<SnapshotContractValidationException>(() =>
+            SnapshotContractV1.Deserialize(root.ToJsonString()));
     }
 
     [Fact]
