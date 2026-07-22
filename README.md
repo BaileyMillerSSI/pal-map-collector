@@ -26,7 +26,7 @@ docker compose ps
 docker compose logs -f collector
 ```
 
-Compose reads the ignored `config/*.env` copies, while only `*.env.example` templates are tracked. The templates deliberately contain local-only demonstration credentials and a public, non-secret privacy-key placeholder. Change the Palworld password, provision a Palmap client pair, and generate a unique privacy key before adapting the sample for a real server.
+Compose reads the ignored `config/*.env` copies, while only `*.env.example` templates are tracked. The templates deliberately contain local-only demonstration credentials, a documentation-only ingest address, and a public, non-secret privacy-key placeholder. Change the Palworld password, set the real Palmap ingest URL, provision a Palmap client pair, and generate a unique privacy key before adapting the sample for a real server.
 
 After both services are healthy:
 
@@ -156,4 +156,4 @@ No registry secret is required. The workflow grants `packages: write` only to th
 - A healthy Palworld process with an unhealthy collector readiness endpoint usually indicates a URL or admin-password mismatch. The password must match in the copied `server.env` and `collector.env` files.
 - A failing `/game-data` request usually means `ENABLE_GAMEDATA_API=true` was not applied before the Palworld server started.
 - If port 8212 or 8080 is already occupied, change the host side of the loopback port mapping and set the corresponding integration-test URL. The collector-to-Palworld URL inside Compose remains `http://palworld:8212`.
-- The no-op collector sink is expected to log collection summaries without transmitting data. Implementing a remote Palmap backend requires its endpoint and payload contract.
+- Repeated delivery retries usually indicate an unreachable ingest URL or an unavailable hosted API. An HTTP LAN URL is accepted only when both `DOTNET_ENVIRONMENT=Development` and `PalmapIngest__AllowInsecureHttp=true`; production ingest must use HTTPS.
