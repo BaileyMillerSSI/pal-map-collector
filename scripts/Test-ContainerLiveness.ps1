@@ -7,7 +7,7 @@ param(
     [ValidateSet("linux/amd64", "linux/arm64")]
     [string] $Platform,
 
-    [ValidateRange(1, 180)]
+    [ValidateRange(1, 600)]
     [int] $TimeoutSeconds = 90
 )
 
@@ -50,10 +50,16 @@ try {
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
 
     do {
-        & docker exec $containerName wget -q -O /dev/null http://127.0.0.1:8080/health/live
+        $probeOutput = & docker exec $containerName wget -q -O /dev/null http://127.0.0.1:8080/health/live 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Host "Liveness smoke passed for $Platform."
             return
+        }
+
+        $isRunning = & docker inspect --format "{{.State.Running}}" $containerName
+        if ($LASTEXITCODE -ne 0 -or $isRunning -ne "true") {
+            & docker logs $containerName
+            throw "Collector exited before liveness succeeded for $Platform. Last probe: $probeOutput"
         }
 
         Start-Sleep -Seconds 1

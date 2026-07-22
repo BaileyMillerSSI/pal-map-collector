@@ -235,6 +235,7 @@ jobs:
           ./scripts/Test-ContainerLiveness.ps1
           -Image palmap-collector-smoke:arm64
           -Platform linux/arm64
+          -TimeoutSeconds 300
 
       - name: Log in to GitHub Container Registry
         if: ${{ env.PUSH_IMAGE == 'true' }}
