@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -293,6 +294,88 @@ public sealed class CollectorIngestTests
         Assert.Equal(4, await signal.WaitForRevisionAfter(1, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task CollectorPopulatesExistingV1WorldPlayerAndServerFields()
+    {
+        var (service, queue, _) = CreateCollectorService();
+        var first = Players().Players[0];
+        await service.ReportPlayerLocations(new PlayerListResponse
+        {
+            Players =
+            [
+                first,
+                first with
+                {
+                    Name = "Second Explorer",
+                    PlayerId = "raw-player-id-2",
+                    UserId = "raw-user-id-2",
+                    BuildingCount = null,
+                    LocationX = 13_000
+                }
+            ]
+        });
+        await service.ReportGameData(ParityWorld(), service.CaptureWorldRevision());
+        await service.ReportServerSettings(FullServer());
+        var envelope = await queue.Read(CancellationToken.None);
+
+        Assert.Equal(2, envelope.Snapshot.Players.Data!.Count);
+        Assert.Null(envelope.Snapshot.Players.Data[1].BuildingCount);
+        Assert.All(envelope.Snapshot.Players.Data, player =>
+            Assert.Equal(PlayerLocationKind.Overworld, player.Location.Kind));
+
+        var world = envelope.Snapshot.World.Data!;
+        Assert.Equal(42, world.Stats.InGameDays);
+        Assert.Equal("14:30", world.Stats.InGameTime);
+        var guild = Assert.Single(world.Guilds);
+        Assert.Equal("Synthetic Guild", guild.Name);
+        Assert.Equal(2, guild.OnlinePlayerCount);
+        Assert.Equal(4, guild.KnownBuildingCount);
+        Assert.False(guild.BuildingCountComplete);
+
+        var server = envelope.Snapshot.Server.Data!;
+        Assert.Equal(["Steam", "Xbox"], server.SupportedPlatforms);
+        Assert.Equal(
+            new PublicServerRules(
+                "Custom", 2, 1.5, 0.8, 1.2, 1, 0.5, "Item",
+                1.2, 0.75, 1.1, 0.9, 0.5, 0.7, 0.6, 0.8,
+                2, 1.25, 0.5, 1.5, 0.7, 0, 10, 20, 0,
+                false, true, true, true, true, false, 30, 1800),
+            server.Rules);
+    }
+
+    [Fact]
+    public void OmittedOptionalServerSettingsRemainUnknownAndLegacyPlatformsStillWork()
+    {
+        var sanitizer = new SnapshotSanitizer(
+            new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()));
+        var minimal = sanitizer.Server(new ServerSettingsResponse
+        {
+            ServerName = "Minimal",
+            ServerDescription = "Synthetic",
+            ServerPlayerMaxNum = 32,
+            BaseCampWorkerMaxNum = 15,
+            DayTimeSpeedRate = 1,
+            NightTimeSpeedRate = 1,
+            AllowConnectPlatform = "(Steam, Xbox)"
+        });
+
+        Assert.Equal(["Steam", "Xbox"], minimal.SupportedPlatforms);
+        foreach (var property in typeof(PublicServerRules).GetProperties())
+        {
+            Assert.Null(property.GetValue(minimal.Rules));
+        }
+    }
+
+    [Fact]
+    public void NumericInGameTimeIsNormalizedIntoTheExistingStringField()
+    {
+        var sanitizer = new SnapshotSanitizer(
+            new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()));
+        var world = sanitizer.World(ParityWorld() with { InGameTime = JsonValue("930.5") });
+
+        Assert.Equal("930.5", world.Stats.InGameTime);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, "Unauthorized")]
     [InlineData(HttpStatusCode.Forbidden, "Unauthorized")]
@@ -457,6 +540,65 @@ public sealed class CollectorIngestTests
             new WorldActor { Type = "Character", UnitType = "Player", UserId = "raw-user-id", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", Stage = stage, IpAddress = "198.51.100.4" }
         ]
     };
+
+    private static WorldActorSnapshotResponse ParityWorld() => World("None") with
+    {
+        InGameDays = 42.9,
+        InGameTime = JsonValue("\"14:30\""),
+        ActorData =
+        [
+            new WorldActor { Type = "PalBox", GuildId = "raw-guild-id", LocationX = 12_000, LocationY = -4_000, LocationZ = 0 },
+            new WorldActor { Type = "Character", UnitType = "BaseCampPal", GuildId = "raw-guild-id", Level = 10, HitPoints = 100, MaxHitPoints = 120, LocationX = 12_010, LocationY = -3_990 },
+            new WorldActor { Type = "Character", UnitType = "Player", UserId = "raw-user-id", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", Stage = "None" },
+            new WorldActor { Type = "Character", UnitType = "Player", UserId = "raw-user-id-2", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", Stage = "None" }
+        ]
+    };
+
+    private static ServerSettingsResponse FullServer() => Server() with
+    {
+        Difficulty = "Custom",
+        ExpRate = 2,
+        PalCaptureRate = 1.5,
+        PalSpawnNumRate = 0.8,
+        WorkSpeedRate = 1.2,
+        PalEggDefaultHatchingTime = 1,
+        ItemWeightRate = 0.5,
+        DeathPenalty = "Item",
+        PlayerDamageRateAttack = 1.2,
+        PlayerDamageRateDefense = 0.75,
+        PalDamageRateAttack = 1.1,
+        PalDamageRateDefense = 0.9,
+        PlayerStomachDecreaceRate = 0.5,
+        PlayerStaminaDecreaceRate = 0.7,
+        PalStomachDecreaceRate = 0.6,
+        PalStaminaDecreaceRate = 0.8,
+        CollectionDropRate = 2,
+        CollectionObjectHpRate = 1.25,
+        CollectionObjectRespawnSpeedRate = 0.5,
+        EnemyDropItemRate = 1.5,
+        BuildObjectDamageRate = 0.7,
+        BuildObjectDeteriorationDamageRate = 0,
+        BaseCampMaxNum = 99,
+        BaseCampMaxNumInGuild = 10,
+        GuildPlayerMaxNum = 20,
+        MaxBuildingLimitNum = 0,
+        Hardcore = false,
+        EnableFastTravel = true,
+        EnableInvaderEnemy = true,
+        AllowClientMod = true,
+        IsUseBackupSaveData = true,
+        EnableVoiceChat = false,
+        AutoSaveSpan = 30,
+        SupplyDropSpan = 1800,
+        CrossplayPlatforms = ["Steam", "Xbox", "Steam"],
+        AllowConnectPlatform = "(Legacy)"
+    };
+
+    private static JsonElement JsonValue(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
 
     private static ServerSettingsResponse Server() => new()
     {

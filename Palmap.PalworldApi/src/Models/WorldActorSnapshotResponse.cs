@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Palmap.PalworldApi.Models;
 
 internal sealed record WorldActorSnapshotResponse
@@ -6,10 +8,14 @@ internal sealed record WorldActorSnapshotResponse
     public string Time { get; init; } = string.Empty;
 
     [System.Text.Json.Serialization.JsonPropertyName("FPS")]
-    public float Fps { get; init; }
+    public double Fps { get; init; }
 
     [System.Text.Json.Serialization.JsonPropertyName("AverageFPS")]
-    public float AverageFps { get; init; }
+    public double AverageFps { get; init; }
+
+    public double? InGameDays { get; init; }
+
+    public JsonElement? InGameTime { get; init; }
 
     public IReadOnlyList<WorldActor> ActorData { get; init; } = [];
 }

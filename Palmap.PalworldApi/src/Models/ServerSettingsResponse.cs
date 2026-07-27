@@ -10,49 +10,49 @@ internal sealed record ServerSettingsResponse
 
     public double NightTimeSpeedRate { get; init; }
 
-    public double ExpRate { get; init; }
+    public double? ExpRate { get; init; }
 
-    public double PalCaptureRate { get; init; }
+    public double? PalCaptureRate { get; init; }
 
-    public double PalSpawnNumRate { get; init; }
+    public double? PalSpawnNumRate { get; init; }
 
-    public double PalDamageRateAttack { get; init; }
+    public double? PalDamageRateAttack { get; init; }
 
-    public double PalDamageRateDefense { get; init; }
+    public double? PalDamageRateDefense { get; init; }
 
-    public double PlayerDamageRateAttack { get; init; }
+    public double? PlayerDamageRateAttack { get; init; }
 
-    public double PlayerDamageRateDefense { get; init; }
+    public double? PlayerDamageRateDefense { get; init; }
 
-    public double PlayerStomachDecreaceRate { get; init; }
+    public double? PlayerStomachDecreaceRate { get; init; }
 
-    public double PlayerStaminaDecreaceRate { get; init; }
+    public double? PlayerStaminaDecreaceRate { get; init; }
 
     public double PlayerAutoHPRegeneRate { get; init; }
 
     public double PlayerAutoHpRegeneRateInSleep { get; init; }
 
-    public double PalStomachDecreaceRate { get; init; }
+    public double? PalStomachDecreaceRate { get; init; }
 
-    public double PalStaminaDecreaceRate { get; init; }
+    public double? PalStaminaDecreaceRate { get; init; }
 
     public double PalAutoHPRegeneRate { get; init; }
 
     public double PalAutoHpRegeneRateInSleep { get; init; }
 
-    public double BuildObjectDamageRate { get; init; }
+    public double? BuildObjectDamageRate { get; init; }
 
-    public double BuildObjectDeteriorationDamageRate { get; init; }
+    public double? BuildObjectDeteriorationDamageRate { get; init; }
 
-    public double CollectionDropRate { get; init; }
+    public double? CollectionDropRate { get; init; }
 
-    public double CollectionObjectHpRate { get; init; }
+    public double? CollectionObjectHpRate { get; init; }
 
-    public double CollectionObjectRespawnSpeedRate { get; init; }
+    public double? CollectionObjectRespawnSpeedRate { get; init; }
 
-    public double EnemyDropItemRate { get; init; }
+    public double? EnemyDropItemRate { get; init; }
 
-    public string DeathPenalty { get; init; } = string.Empty;
+    public string? DeathPenalty { get; init; }
 
     [JsonPropertyName("bEnablePlayerToPlayerDamage")]
     public bool EnablePlayerToPlayerDamage { get; init; }
@@ -61,7 +61,7 @@ internal sealed record ServerSettingsResponse
     public bool EnableFriendlyFire { get; init; }
 
     [JsonPropertyName("bEnableInvaderEnemy")]
-    public bool EnableInvaderEnemy { get; init; }
+    public bool? EnableInvaderEnemy { get; init; }
 
     [JsonPropertyName("bActiveUNKO")]
     public bool ActiveUnko { get; init; }
@@ -77,7 +77,9 @@ internal sealed record ServerSettingsResponse
     [JsonPropertyName("DropItemMaxNum_UNKO")]
     public int DropItemMaxNumUnko { get; init; }
 
-    public int BaseCampMaxNum { get; init; }
+    public int? BaseCampMaxNum { get; init; }
+
+    public int? BaseCampMaxNumInGuild { get; init; }
 
     public int BaseCampWorkerMaxNum { get; init; }
 
@@ -88,11 +90,20 @@ internal sealed record ServerSettingsResponse
 
     public double AutoResetGuildTimeNoOnlinePlayers { get; init; }
 
-    public int GuildPlayerMaxNum { get; init; }
+    public int? GuildPlayerMaxNum { get; init; }
 
-    public double PalEggDefaultHatchingTime { get; init; }
+    public double? PalEggDefaultHatchingTime { get; init; }
 
-    public double WorkSpeedRate { get; init; }
+    public double? WorkSpeedRate { get; init; }
+
+    public double? ItemWeightRate { get; init; }
+
+    public int? MaxBuildingLimitNum { get; init; }
+
+    public double? SupplyDropSpan { get; init; }
+
+    [JsonPropertyName("autoSaveSpan")]
+    public double? AutoSaveSpan { get; init; }
 
     [JsonPropertyName("bIsMultiplay")]
     public bool IsMultiplay { get; init; }
@@ -107,7 +118,7 @@ internal sealed record ServerSettingsResponse
     public bool EnableNonLoginPenalty { get; init; }
 
     [JsonPropertyName("bEnableFastTravel")]
-    public bool EnableFastTravel { get; init; }
+    public bool? EnableFastTravel { get; init; }
 
     [JsonPropertyName("bIsStartLocationSelectByMap")]
     public bool IsStartLocationSelectByMap { get; init; }
@@ -154,10 +165,21 @@ internal sealed record ServerSettingsResponse
     [JsonPropertyName("bShowPlayerList")]
     public bool ShowPlayerList { get; init; }
 
-    public string AllowConnectPlatform { get; init; } = string.Empty;
+    public IReadOnlyList<string>? CrossplayPlatforms { get; init; }
+
+    public string? AllowConnectPlatform { get; init; }
 
     [JsonPropertyName("bIsUseBackupSaveData")]
-    public bool IsUseBackupSaveData { get; init; }
+    public bool? IsUseBackupSaveData { get; init; }
+
+    [JsonPropertyName("bHardcore")]
+    public bool? Hardcore { get; init; }
+
+    [JsonPropertyName("bAllowClientMod")]
+    public bool? AllowClientMod { get; init; }
+
+    [JsonPropertyName("bEnableVoiceChat")]
+    public bool? EnableVoiceChat { get; init; }
 
     public string LogFormatType { get; init; } = string.Empty;
 }
