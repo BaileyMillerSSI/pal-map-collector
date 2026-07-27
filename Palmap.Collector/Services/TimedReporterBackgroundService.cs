@@ -31,7 +31,7 @@ internal abstract class TimedReporterBackgroundService(
             {
                 await palworldHealthService.WaitUntilHealthy(stoppingToken);
                 await ReportOnce(stoppingToken);
-                await collectorDelay.Delay(ReportIntervalMs, stoppingToken);
+                await WaitAfterSuccessfulReport(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -71,4 +71,10 @@ internal abstract class TimedReporterBackgroundService(
         }
             ? CollectorSourceFailure.Unauthorized
             : CollectorSourceFailure.Unavailable;
+
+    protected virtual Task WaitAfterSuccessfulReport(CancellationToken cancellationToken) =>
+        collectorDelay.Delay(ReportIntervalMs, cancellationToken);
+
+    protected Task Delay(int milliseconds, CancellationToken cancellationToken) =>
+        collectorDelay.Delay(milliseconds, cancellationToken);
 }

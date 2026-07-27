@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using Palmap.CollectorApi.Configuration;
@@ -26,7 +27,7 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
             {
                 if (player is null) throw new InvalidDataException("The player list contained a null entry.");
                 Require(!string.IsNullOrWhiteSpace(player.PlayerId) && !string.IsNullOrWhiteSpace(player.Name));
-                Require(player.Level >= 0 && player.BuildingCount >= 0);
+                Require(player.Level >= 0 && player.BuildingCount is null or >= 0);
                 Require(double.IsFinite(player.Ping) && player.Ping >= 0 &&
                     double.IsFinite(player.LocationX) && double.IsFinite(player.LocationY));
                 return new SanitizedPlayer(
@@ -52,8 +53,8 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
     {
         ArgumentNullException.ThrowIfNull(response);
         Require(!string.IsNullOrWhiteSpace(response.Time));
-        Require(float.IsFinite(response.Fps) && response.Fps >= 0 &&
-            float.IsFinite(response.AverageFps) && response.AverageFps >= 0);
+        Require(double.IsFinite(response.Fps) && response.Fps >= 0 &&
+            double.IsFinite(response.AverageFps) && response.AverageFps >= 0);
         var privacyKey = PrivacyKey();
         try
         {
@@ -64,12 +65,17 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
 
             GuildAccumulator GuildFor(string rawId, string? name)
             {
+                var cleanedName = CleanRequired(name, "Unknown guild", 128);
                 if (!guilds.TryGetValue(rawId, out var guild))
                 {
                     guild = new GuildAccumulator(
                         Opaque(privacyKey, OpaqueIdKind.Guild, rawId),
-                        CleanRequired(name, "Unknown guild", 128));
+                        cleanedName);
                     guilds.Add(rawId, guild);
+                }
+                else if (guild.Name == "Unknown guild" && cleanedName != "Unknown guild")
+                {
+                    guild.Name = cleanedName;
                 }
 
                 return guild;
@@ -132,13 +138,21 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
                 .OrderBy(guild => guild.Name, StringComparer.Ordinal)
                 .ThenBy(guild => guild.Id, StringComparer.Ordinal)
                 .ToArray();
+            var inGameDays = response.InGameDays is { } days &&
+                double.IsFinite(days) && days is >= 0 and <= int.MaxValue
+                    ? (int?)days
+                    : null;
+            var inGameTime = response.InGameTime is { } time &&
+                time.ValueKind is JsonValueKind.String or JsonValueKind.Number
+                    ? CleanOptional(time.ToString(), 128)
+                    : null;
             return new SanitizedWorld(
                 new PublicWorldStats(
                     CleanRequired(response.Time, "unknown", 128),
                     response.Fps,
                     response.AverageFps,
-                    null,
-                    null,
+                    inGameDays,
+                    inGameTime,
                     counts.ToPublic()),
                 playersByUser,
                 Array.AsReadOnly(projectedGuilds));
@@ -154,13 +168,17 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
         ArgumentNullException.ThrowIfNull(response);
         Nonnegative(response.DayTimeSpeedRate);
         Nonnegative(response.NightTimeSpeedRate);
-        Require(response.ServerPlayerMaxNum >= 0 && response.BaseCampWorkerMaxNum >= 0 &&
-            response.BaseCampMaxNum >= 0 && response.GuildPlayerMaxNum >= 0);
-        var platforms = (response.AllowConnectPlatform ?? string.Empty)
-            .Replace("(", string.Empty, StringComparison.Ordinal)
-            .Replace(")", string.Empty, StringComparison.Ordinal)
-            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+        Require(response.ServerPlayerMaxNum >= 0 && response.BaseCampWorkerMaxNum >= 0);
+        var configuredPlatforms = response.CrossplayPlatforms is { Count: > 0 }
+            ? response.CrossplayPlatforms
+            : (response.AllowConnectPlatform ?? string.Empty)
+                .Replace("(", string.Empty, StringComparison.Ordinal)
+                .Replace(")", string.Empty, StringComparison.Ordinal)
+                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var platforms = configuredPlatforms
+            .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => CleanRequired(value, "Unknown", 128))
+            .Distinct(StringComparer.Ordinal)
             .Take(32)
             .ToArray();
         var rules = new PublicServerRules(
@@ -170,7 +188,7 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
             Checked(response.PalSpawnNumRate),
             Checked(response.WorkSpeedRate),
             Checked(response.PalEggDefaultHatchingTime),
-            null,
+            Checked(response.ItemWeightRate),
             CleanOptional(response.DeathPenalty, 128),
             Checked(response.PlayerDamageRateAttack),
             Checked(response.PlayerDamageRateDefense),
@@ -186,17 +204,17 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
             Checked(response.EnemyDropItemRate),
             Checked(response.BuildObjectDamageRate),
             Checked(response.BuildObjectDeteriorationDamageRate),
-            response.BaseCampMaxNum,
-            response.GuildPlayerMaxNum,
-            null,
-            null,
+            Checked(response.BaseCampMaxNumInGuild ?? response.BaseCampMaxNum),
+            Checked(response.GuildPlayerMaxNum),
+            Checked(response.MaxBuildingLimitNum),
+            response.Hardcore,
             response.EnableFastTravel,
             response.EnableInvaderEnemy,
-            null,
+            response.AllowClientMod,
             response.IsUseBackupSaveData,
-            null,
-            null,
-            null);
+            response.EnableVoiceChat,
+            Checked(response.AutoSaveSpan),
+            Checked(response.SupplyDropSpan));
         return new PublicServerDetails(
             CleanRequired(response.ServerName, "Unnamed Palworld server", 128),
             CleanRequired(response.ServerDescription, "No description", 1024),
@@ -229,7 +247,14 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
             if (context?.GuildId is not null && guilds?.TryGetValue(context.GuildId, out var guild) == true)
             {
                 guild.OnlinePlayerCount++;
-                guild.KnownBuildingCount += player.BuildingCount;
+                if (player.BuildingCount is { } buildingCount)
+                {
+                    guild.KnownBuildingCount += buildingCount;
+                }
+                else
+                {
+                    guild.BuildingCountComplete = false;
+                }
             }
 
             return new PublicPlayer(
@@ -285,9 +310,19 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
         }
     }
 
-    private static double Checked(double value)
+    private static double? Checked(double? value)
     {
-        Nonnegative(value);
+        if (value is not null)
+        {
+            Nonnegative(value.Value);
+        }
+
+        return value;
+    }
+
+    private static int? Checked(int? value)
+    {
+        Require(value is null or >= 0);
         return value;
     }
 
@@ -389,7 +424,7 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
     private sealed class GuildAccumulator(string id, string name) : PalTotals
     {
         public string Id { get; } = id;
-        public string Name { get; } = name;
+        public string Name { get; set; } = name;
         public List<BaseAccumulator> Bases { get; } = [];
 
         public void AssignToNearestBase(WorldActor actor)
@@ -444,13 +479,14 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
     {
         public int OnlinePlayerCount { get; set; }
         public long KnownBuildingCount { get; set; }
+        public bool BuildingCountComplete { get; set; } = true;
 
         public PublicGuildAggregate ToPublic() => new(
             guild.Id,
             guild.Name,
             OnlinePlayerCount,
             KnownBuildingCount,
-            true,
+            BuildingCountComplete,
             guild.Bases.Count,
             guild.PalCount,
             guild.UnassignedBasePalCount,
@@ -500,7 +536,7 @@ internal static class MapProjection
 internal enum OpaqueIdKind { Player, UserCorrelation, Guild, Base }
 internal sealed record SanitizedPlayer(
     string Id, string? UserCorrelationId, string Name, int Level, int PingMs,
-    int BuildingCount, double X, double Y);
+    int? BuildingCount, double X, double Y);
 internal sealed record SanitizedPlayerContext(string? GuildId, bool IsInstanced);
 internal sealed record SanitizedGuild(
     string Id, string Name, int PalCount, long TotalLevel, double CurrentHp,

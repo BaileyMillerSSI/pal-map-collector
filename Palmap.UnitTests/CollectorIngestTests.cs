@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -150,14 +151,17 @@ public sealed class CollectorIngestTests
         var options = new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings());
         var sanitizer = new SnapshotSanitizer(options);
         var queue = new LatestSnapshotQueue();
+        var refreshSignal = new GameDataRefreshSignal();
         var service = new SnapshotCollectorApiService(
             sanitizer,
             queue,
+            refreshSignal,
+            new StaticOptionsMonitor<CollectorSettings>(new()),
             TimeProvider.System,
             NullLogger<SnapshotCollectorApiService>.Instance);
 
         await service.ReportPlayerLocations(Players());
-        await service.ReportGameData(World());
+        await service.ReportGameData(World(), service.CaptureWorldRevision());
         await service.ReportServerSettings(Server());
         var complete = await queue.Read(CancellationToken.None);
         var json = SnapshotContractV1.Serialize(complete);
@@ -199,6 +203,177 @@ public sealed class CollectorIngestTests
         Assert.Equal(SnapshotSourceState.Unavailable, retained.Snapshot.Players.Status.State);
         Assert.True(retained.Snapshot.Players.Status.IsStale);
         Assert.NotNull(retained.Snapshot.Players.Data);
+    }
+
+    [Fact]
+    public async Task StablePlayersRemainRenderableAndTeleportRefreshesAreDeduplicated()
+    {
+        var (service, queue, refreshSignal) = CreateCollectorService();
+
+        await service.ReportPlayerLocations(PlayersAt(12_500, -4_200));
+        var firstPlayers = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(firstPlayers.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(1, await refreshSignal.WaitForRevisionAfter(0, CancellationToken.None));
+
+        await service.ReportGameData(World("None"), service.CaptureWorldRevision());
+        _ = await queue.Read(CancellationToken.None);
+
+        await service.ReportPlayerLocations(PlayersAt(12_510, -4_195));
+        var ordinaryMovement = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Overworld, Assert.Single(ordinaryMovement.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(1, service.CaptureWorldRevision());
+
+        await service.ReportPlayerLocations(PlayersAt(62_510, -4_195));
+        var teleport = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(teleport.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(2, service.CaptureWorldRevision());
+
+        await service.ReportPlayerLocations(PlayersAt(112_510, -4_195));
+        var repeatedTeleport = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(repeatedTeleport.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(2, service.CaptureWorldRevision());
+        Assert.Equal(2, await refreshSignal.WaitForRevisionAfter(1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task InFlightWorldResponseCannotClearANewerPlayerTransition()
+    {
+        var (service, queue, refreshSignal) = CreateCollectorService();
+        await service.ReportPlayerLocations(PlayersAt(12_500, -4_200));
+        _ = await queue.Read(CancellationToken.None);
+        _ = await refreshSignal.WaitForRevisionAfter(0, CancellationToken.None);
+        await service.ReportGameData(World("None"), service.CaptureWorldRevision());
+        _ = await queue.Read(CancellationToken.None);
+
+        var inFlightRevision = service.CaptureWorldRevision();
+        await service.ReportPlayerLocations(PlayersAt(62_500, -4_200));
+        _ = await queue.Read(CancellationToken.None);
+        var transitionRevision = service.CaptureWorldRevision();
+
+        await service.ReportGameData(World("None"), inFlightRevision);
+        var olderWorld = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(olderWorld.Snapshot.Players.Data!).Location.Kind);
+
+        await service.ReportGameData(World("None"), transitionRevision);
+        var refreshedWorld = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Overworld, Assert.Single(refreshedWorld.Snapshot.Players.Data!).Location.Kind);
+    }
+
+    [Fact]
+    public async Task OfflinePlayersArePrunedFromPendingRefreshes()
+    {
+        var (service, queue, refreshSignal) = CreateCollectorService();
+        await service.ReportPlayerLocations(PlayersAt(12_500, -4_200));
+        _ = await queue.Read(CancellationToken.None);
+        _ = await refreshSignal.WaitForRevisionAfter(0, CancellationToken.None);
+        await service.ReportGameData(World("None"), service.CaptureWorldRevision());
+        _ = await queue.Read(CancellationToken.None);
+
+        await service.ReportPlayerLocations(PlayersAt(62_500, -4_200));
+        _ = await queue.Read(CancellationToken.None);
+        Assert.Equal(2, service.CaptureWorldRevision());
+
+        await service.ReportPlayerLocations(new PlayerListResponse { Players = [] });
+        _ = await queue.Read(CancellationToken.None);
+        await service.ReportPlayerLocations(PlayersAt(62_500, -4_200));
+        var rejoined = await queue.Read(CancellationToken.None);
+
+        Assert.Equal(3, service.CaptureWorldRevision());
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(rejoined.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(3, await refreshSignal.WaitForRevisionAfter(1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RefreshSignalCoalescesToTheLatestRevision()
+    {
+        var signal = new GameDataRefreshSignal();
+        signal.Request(2);
+        signal.Request(3);
+        signal.Request(4);
+
+        Assert.Equal(4, await signal.WaitForRevisionAfter(1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CollectorPopulatesExistingV1WorldPlayerAndServerFields()
+    {
+        var (service, queue, _) = CreateCollectorService();
+        var first = Players().Players[0];
+        await service.ReportPlayerLocations(new PlayerListResponse
+        {
+            Players =
+            [
+                first,
+                first with
+                {
+                    Name = "Second Explorer",
+                    PlayerId = "raw-player-id-2",
+                    UserId = "raw-user-id-2",
+                    BuildingCount = null,
+                    LocationX = 13_000
+                }
+            ]
+        });
+        await service.ReportGameData(ParityWorld(), service.CaptureWorldRevision());
+        await service.ReportServerSettings(FullServer());
+        var envelope = await queue.Read(CancellationToken.None);
+
+        Assert.Equal(2, envelope.Snapshot.Players.Data!.Count);
+        Assert.Null(envelope.Snapshot.Players.Data[1].BuildingCount);
+        Assert.All(envelope.Snapshot.Players.Data, player =>
+            Assert.Equal(PlayerLocationKind.Overworld, player.Location.Kind));
+
+        var world = envelope.Snapshot.World.Data!;
+        Assert.Equal(42, world.Stats.InGameDays);
+        Assert.Equal("14:30", world.Stats.InGameTime);
+        var guild = Assert.Single(world.Guilds);
+        Assert.Equal("Synthetic Guild", guild.Name);
+        Assert.Equal(2, guild.OnlinePlayerCount);
+        Assert.Equal(4, guild.KnownBuildingCount);
+        Assert.False(guild.BuildingCountComplete);
+
+        var server = envelope.Snapshot.Server.Data!;
+        Assert.Equal(["Steam", "Xbox"], server.SupportedPlatforms);
+        Assert.Equal(
+            new PublicServerRules(
+                "Custom", 2, 1.5, 0.8, 1.2, 1, 0.5, "Item",
+                1.2, 0.75, 1.1, 0.9, 0.5, 0.7, 0.6, 0.8,
+                2, 1.25, 0.5, 1.5, 0.7, 0, 10, 20, 0,
+                false, true, true, true, true, false, 30, 1800),
+            server.Rules);
+    }
+
+    [Fact]
+    public void OmittedOptionalServerSettingsRemainUnknownAndLegacyPlatformsStillWork()
+    {
+        var sanitizer = new SnapshotSanitizer(
+            new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()));
+        var minimal = sanitizer.Server(new ServerSettingsResponse
+        {
+            ServerName = "Minimal",
+            ServerDescription = "Synthetic",
+            ServerPlayerMaxNum = 32,
+            BaseCampWorkerMaxNum = 15,
+            DayTimeSpeedRate = 1,
+            NightTimeSpeedRate = 1,
+            AllowConnectPlatform = "(Steam, Xbox)"
+        });
+
+        Assert.Equal(["Steam", "Xbox"], minimal.SupportedPlatforms);
+        foreach (var property in typeof(PublicServerRules).GetProperties())
+        {
+            Assert.Null(property.GetValue(minimal.Rules));
+        }
+    }
+
+    [Fact]
+    public void NumericInGameTimeIsNormalizedIntoTheExistingStringField()
+    {
+        var sanitizer = new SnapshotSanitizer(
+            new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()));
+        var world = sanitizer.World(ParityWorld() with { InGameTime = JsonValue("930.5") });
+
+        Assert.Equal("930.5", world.Stats.InGameTime);
     }
 
     [Theory]
@@ -316,6 +491,21 @@ public sealed class CollectorIngestTests
         PrivacyKey = Convert.ToBase64String(Enumerable.Range(0, 32).Select(value => (byte)value).ToArray())
     };
 
+    private static (SnapshotCollectorApiService Service, LatestSnapshotQueue Queue, GameDataRefreshSignal Signal)
+        CreateCollectorService()
+    {
+        var queue = new LatestSnapshotQueue();
+        var signal = new GameDataRefreshSignal();
+        var service = new SnapshotCollectorApiService(
+            new SnapshotSanitizer(new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings())),
+            queue,
+            signal,
+            new StaticOptionsMonitor<CollectorSettings>(new()),
+            TimeProvider.System,
+            NullLogger<SnapshotCollectorApiService>.Instance);
+        return (service, queue, signal);
+    }
+
     private static PlayerListResponse Players() => new()
     {
         Players = [new PalworldPlayer
@@ -333,7 +523,12 @@ public sealed class CollectorIngestTests
         }]
     };
 
-    private static WorldActorSnapshotResponse World() => new()
+    private static PlayerListResponse PlayersAt(double x, double y) => Players() with
+    {
+        Players = [Players().Players[0] with { LocationX = x, LocationY = y }]
+    };
+
+    private static WorldActorSnapshotResponse World(string stage = "Dungeon_Boss_Secret") => new()
     {
         Time = "2026-07-21 12:00",
         Fps = 60,
@@ -342,9 +537,68 @@ public sealed class CollectorIngestTests
         [
             new WorldActor { Type = "PalBox", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", LocationX = 12_000, LocationY = -4_000, LocationZ = 0 },
             new WorldActor { Type = "Character", UnitType = "BaseCampPal", GuildId = "raw-guild-id", Level = 10, HitPoints = 100, MaxHitPoints = 120, LocationX = 12_010, LocationY = -3_990 },
-            new WorldActor { Type = "Character", UnitType = "Player", UserId = "raw-user-id", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", Stage = "Dungeon_Boss_Secret", IpAddress = "198.51.100.4" }
+            new WorldActor { Type = "Character", UnitType = "Player", UserId = "raw-user-id", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", Stage = stage, IpAddress = "198.51.100.4" }
         ]
     };
+
+    private static WorldActorSnapshotResponse ParityWorld() => World("None") with
+    {
+        InGameDays = 42.9,
+        InGameTime = JsonValue("\"14:30\""),
+        ActorData =
+        [
+            new WorldActor { Type = "PalBox", GuildId = "raw-guild-id", LocationX = 12_000, LocationY = -4_000, LocationZ = 0 },
+            new WorldActor { Type = "Character", UnitType = "BaseCampPal", GuildId = "raw-guild-id", Level = 10, HitPoints = 100, MaxHitPoints = 120, LocationX = 12_010, LocationY = -3_990 },
+            new WorldActor { Type = "Character", UnitType = "Player", UserId = "raw-user-id", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", Stage = "None" },
+            new WorldActor { Type = "Character", UnitType = "Player", UserId = "raw-user-id-2", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", Stage = "None" }
+        ]
+    };
+
+    private static ServerSettingsResponse FullServer() => Server() with
+    {
+        Difficulty = "Custom",
+        ExpRate = 2,
+        PalCaptureRate = 1.5,
+        PalSpawnNumRate = 0.8,
+        WorkSpeedRate = 1.2,
+        PalEggDefaultHatchingTime = 1,
+        ItemWeightRate = 0.5,
+        DeathPenalty = "Item",
+        PlayerDamageRateAttack = 1.2,
+        PlayerDamageRateDefense = 0.75,
+        PalDamageRateAttack = 1.1,
+        PalDamageRateDefense = 0.9,
+        PlayerStomachDecreaceRate = 0.5,
+        PlayerStaminaDecreaceRate = 0.7,
+        PalStomachDecreaceRate = 0.6,
+        PalStaminaDecreaceRate = 0.8,
+        CollectionDropRate = 2,
+        CollectionObjectHpRate = 1.25,
+        CollectionObjectRespawnSpeedRate = 0.5,
+        EnemyDropItemRate = 1.5,
+        BuildObjectDamageRate = 0.7,
+        BuildObjectDeteriorationDamageRate = 0,
+        BaseCampMaxNum = 99,
+        BaseCampMaxNumInGuild = 10,
+        GuildPlayerMaxNum = 20,
+        MaxBuildingLimitNum = 0,
+        Hardcore = false,
+        EnableFastTravel = true,
+        EnableInvaderEnemy = true,
+        AllowClientMod = true,
+        IsUseBackupSaveData = true,
+        EnableVoiceChat = false,
+        AutoSaveSpan = 30,
+        SupplyDropSpan = 1800,
+        CrossplayPlatforms = ["Steam", "Xbox", "Steam"],
+        AllowConnectPlatform = "(Legacy)"
+    };
+
+    private static JsonElement JsonValue(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
 
     private static ServerSettingsResponse Server() => new()
     {

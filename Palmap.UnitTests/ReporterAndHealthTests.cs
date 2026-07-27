@@ -4,6 +4,8 @@ using Palmap.Collector.Health;
 using Palmap.Collector.Services;
 using Palmap.CollectorApi.Configuration;
 using Palmap.CollectorApi.Services;
+using Palmap.CollectorApi.Services.Internal;
+using Palmap.PalworldApi.Models;
 
 namespace Palmap.UnitTests;
 
@@ -30,6 +32,7 @@ public sealed class ReporterAndHealthTests
         await new GameDataReportTimedBackgroundService(
             palworld,
             collector,
+            new GameDataRefreshSignal(),
             options,
             health,
             delay,
@@ -80,6 +83,7 @@ public sealed class ReporterAndHealthTests
             new GameDataReportTimedBackgroundService(
                 palworld,
                 collector,
+                new GameDataRefreshSignal(),
                 options,
                 health,
                 gameDataDelay,
@@ -98,6 +102,63 @@ public sealed class ReporterAndHealthTests
                 NullLogger<GameServerSettingsReportTimedBackgroundService>.Instance),
             settingsDelay,
             33);
+    }
+
+    [Fact]
+    public async Task GameDataReporterWakesImmediatelyForTheLatestRefreshRequest()
+    {
+        var palworld = new StubPalworldApiService();
+        var collector = new RecordingCollectorApiService();
+        var refreshSignal = new GameDataRefreshSignal();
+        var delay = new RecordingCollectorDelay();
+        var worker = new GameDataReportTimedBackgroundService(
+            palworld,
+            collector,
+            refreshSignal,
+            new StaticOptionsMonitor<CollectorSettings>(new()),
+            new StubPalworldApiHealthService(),
+            delay,
+            NullLogger<GameDataReportTimedBackgroundService>.Instance);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await worker.StartAsync(timeout.Token);
+        Assert.Equal(30_000, await delay.ReadNext(timeout.Token));
+        collector.WorldRevision = 2;
+        refreshSignal.Request(1);
+        refreshSignal.Request(2);
+
+        await palworld.SecondWorldActorSnapshotCall.Task.WaitAsync(timeout.Token);
+        Assert.Equal(2, palworld.WorldActorSnapshotCallCount);
+        await worker.StopAsync(timeout.Token);
+    }
+
+    [Fact]
+    public async Task RefreshRequestedDuringWorldFetchRunsAgainWithTheNewRevision()
+    {
+        var blockedWorld = new TaskCompletionSource<WorldActorSnapshotResponse>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var palworld = new StubPalworldApiService { NextWorldActorSnapshot = blockedWorld };
+        var collector = new RecordingCollectorApiService { WorldRevision = 1 };
+        var refreshSignal = new GameDataRefreshSignal();
+        var worker = new GameDataReportTimedBackgroundService(
+            palworld,
+            collector,
+            refreshSignal,
+            new StaticOptionsMonitor<CollectorSettings>(new()),
+            new StubPalworldApiHealthService(),
+            new RecordingCollectorDelay(),
+            NullLogger<GameDataReportTimedBackgroundService>.Instance);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await worker.StartAsync(timeout.Token);
+        await palworld.FirstWorldActorSnapshotCall.Task.WaitAsync(timeout.Token);
+        collector.WorldRevision = 2;
+        refreshSignal.Request(2);
+        blockedWorld.TrySetResult(palworld.Snapshot);
+
+        await collector.SecondWorldReport.Task.WaitAsync(timeout.Token);
+        Assert.Equal([1, 2], collector.ReportedWorldRevisions);
+        await worker.StopAsync(timeout.Token);
     }
 
     [Fact]

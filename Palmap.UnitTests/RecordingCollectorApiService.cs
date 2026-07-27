@@ -13,15 +13,33 @@ internal sealed class RecordingCollectorApiService : ICollectorApiService
 
     public List<(CollectorSourceSection Section, CollectorSourceFailure Failure)> Failures { get; } = [];
 
+    public List<long> ReportedWorldRevisions { get; } = [];
+
+    public TaskCompletionSource SecondWorldReport { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public long WorldRevision { get; set; }
+
     public Task ReportPlayerLocations(PlayerListResponse players, CancellationToken cancellationToken = default)
     {
         Players = players;
         return Task.CompletedTask;
     }
 
-    public Task ReportGameData(WorldActorSnapshotResponse snapshot, CancellationToken cancellationToken = default)
+    public long CaptureWorldRevision() => WorldRevision;
+
+    public Task ReportGameData(
+        WorldActorSnapshotResponse snapshot,
+        long requestedRevision,
+        CancellationToken cancellationToken = default)
     {
         Snapshot = snapshot;
+        ReportedWorldRevisions.Add(requestedRevision);
+        if (ReportedWorldRevisions.Count >= 2)
+        {
+            SecondWorldReport.TrySetResult();
+        }
+
         return Task.CompletedTask;
     }
 

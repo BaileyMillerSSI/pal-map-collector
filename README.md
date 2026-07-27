@@ -79,6 +79,7 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `PalmapIngest:MaximumRetryDelayMs` | `60000` | Maximum retry and server-requested backoff delay |
 | `Collector:PlayerLocationUpdateIntervalMs` | `5000` | Player polling period |
 | `Collector:GameDataUpdateIntervalMs` | `30000` | World actor snapshot polling period |
+| `Collector:StageRefreshDistance` | `50000` | Movement distance that triggers an immediate world refresh to re-check instanced locations |
 | `Collector:ServerSettingsUpdateIntervalMs` | `3600000` | Server settings polling period |
 | `Collector:FailureRetryIntervalMs` | `5000` | Retry period after an unavailable server or failed report |
 | `Collector:PalworldHealthCacheDurationMs` | `5000` | Shared health-probe cache duration |
@@ -87,7 +88,7 @@ URLs must be absolute HTTP or HTTPS URLs. The ingest URL must use HTTPS unless b
 
 Reporter loops update retained sanitized state without waiting for network delivery. The delivery worker sends one stable serialized envelope per attempt sequence, honors bounded `Retry-After` values, and retains only the latest pending snapshot during outages. Authentication and protocol-compatibility failures stop the collector; rejected payloads and exhausted transient retries move on to the latest available state. Raw player, account, platform, network, and Palworld error data are neither included in the public contract nor written to delivery logs.
 
-All reporters share one singleton Palworld health gate. It coalesces and briefly caches probes, prevents reporting calls while REST is unavailable, and releases reporters immediately when the server becomes healthy. The singleton retains only health state; each probe and report uses a short-lived factory client so DNS and handler rotation continue to work. A failed HTTP report invalidates the cached state and retries after `FailureRetryIntervalMs`, rather than waiting for the report's normal interval.
+All reporters share one singleton Palworld health gate. It coalesces and briefly caches probes, prevents reporting calls while REST is unavailable, and releases reporters immediately when the server becomes healthy. The singleton retains only health state; each probe and report uses a short-lived factory client so DNS and handler rotation continue to work. A failed HTTP report invalidates the cached state and retries after `FailureRetryIntervalMs`, rather than waiting for the report's normal interval. Teleport-scale player movement wakes the existing game-data reporter immediately; requests are coalesced, and revision checks prevent an older in-flight world response from clearing a newer location transition.
 
 The Palworld container needs these settings for complete coverage:
 

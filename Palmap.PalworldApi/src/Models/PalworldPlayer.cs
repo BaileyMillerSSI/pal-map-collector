@@ -32,5 +32,5 @@ internal sealed record PalworldPlayer
     public int Level { get; init; }
 
     [JsonPropertyName("building_count")]
-    public int BuildingCount { get; init; }
+    public int? BuildingCount { get; init; }
 }

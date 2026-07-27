@@ -28,6 +28,16 @@ internal sealed class StubPalworldApiService : IPalworldApiService, IPalworldApi
 
     public int PlayerListCallCount { get; private set; }
 
+    public int WorldActorSnapshotCallCount { get; private set; }
+
+    public TaskCompletionSource SecondWorldActorSnapshotCall { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public TaskCompletionSource FirstWorldActorSnapshotCall { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public TaskCompletionSource<WorldActorSnapshotResponse>? NextWorldActorSnapshot { get; set; }
+
     public Exception? PlayerListException { get; set; }
 
     public Task<ServerInfoResponse> ServerInfo(CancellationToken cancellationToken = default) =>
@@ -45,8 +55,19 @@ internal sealed class StubPalworldApiService : IPalworldApiService, IPalworldApi
     public Task<ServerSettingsResponse> ServerSettings(CancellationToken cancellationToken = default) =>
         Task.FromResult(Settings);
 
-    public Task<WorldActorSnapshotResponse> WorldActorSnapshot(CancellationToken cancellationToken = default) =>
-        Task.FromResult(Snapshot);
+    public Task<WorldActorSnapshotResponse> WorldActorSnapshot(CancellationToken cancellationToken = default)
+    {
+        WorldActorSnapshotCallCount++;
+        FirstWorldActorSnapshotCall.TrySetResult();
+        if (WorldActorSnapshotCallCount >= 2)
+        {
+            SecondWorldActorSnapshotCall.TrySetResult();
+        }
+
+        var pending = NextWorldActorSnapshot;
+        NextWorldActorSnapshot = null;
+        return pending?.Task ?? Task.FromResult(Snapshot);
+    }
 
     public Task<ServerMetricsResponse> ServerMetrics(CancellationToken cancellationToken = default) =>
         Task.FromResult(new ServerMetricsResponse());
