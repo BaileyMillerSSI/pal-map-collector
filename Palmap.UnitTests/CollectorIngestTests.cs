@@ -150,14 +150,17 @@ public sealed class CollectorIngestTests
         var options = new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings());
         var sanitizer = new SnapshotSanitizer(options);
         var queue = new LatestSnapshotQueue();
+        var refreshSignal = new GameDataRefreshSignal();
         var service = new SnapshotCollectorApiService(
             sanitizer,
             queue,
+            refreshSignal,
+            new StaticOptionsMonitor<CollectorSettings>(new()),
             TimeProvider.System,
             NullLogger<SnapshotCollectorApiService>.Instance);
 
         await service.ReportPlayerLocations(Players());
-        await service.ReportGameData(World());
+        await service.ReportGameData(World(), service.CaptureWorldRevision());
         await service.ReportServerSettings(Server());
         var complete = await queue.Read(CancellationToken.None);
         var json = SnapshotContractV1.Serialize(complete);
@@ -199,6 +202,95 @@ public sealed class CollectorIngestTests
         Assert.Equal(SnapshotSourceState.Unavailable, retained.Snapshot.Players.Status.State);
         Assert.True(retained.Snapshot.Players.Status.IsStale);
         Assert.NotNull(retained.Snapshot.Players.Data);
+    }
+
+    [Fact]
+    public async Task StablePlayersRemainRenderableAndTeleportRefreshesAreDeduplicated()
+    {
+        var (service, queue, refreshSignal) = CreateCollectorService();
+
+        await service.ReportPlayerLocations(PlayersAt(12_500, -4_200));
+        var firstPlayers = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(firstPlayers.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(1, await refreshSignal.WaitForRevisionAfter(0, CancellationToken.None));
+
+        await service.ReportGameData(World("None"), service.CaptureWorldRevision());
+        _ = await queue.Read(CancellationToken.None);
+
+        await service.ReportPlayerLocations(PlayersAt(12_510, -4_195));
+        var ordinaryMovement = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Overworld, Assert.Single(ordinaryMovement.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(1, service.CaptureWorldRevision());
+
+        await service.ReportPlayerLocations(PlayersAt(62_510, -4_195));
+        var teleport = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(teleport.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(2, service.CaptureWorldRevision());
+
+        await service.ReportPlayerLocations(PlayersAt(112_510, -4_195));
+        var repeatedTeleport = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(repeatedTeleport.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(2, service.CaptureWorldRevision());
+        Assert.Equal(2, await refreshSignal.WaitForRevisionAfter(1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task InFlightWorldResponseCannotClearANewerPlayerTransition()
+    {
+        var (service, queue, refreshSignal) = CreateCollectorService();
+        await service.ReportPlayerLocations(PlayersAt(12_500, -4_200));
+        _ = await queue.Read(CancellationToken.None);
+        _ = await refreshSignal.WaitForRevisionAfter(0, CancellationToken.None);
+        await service.ReportGameData(World("None"), service.CaptureWorldRevision());
+        _ = await queue.Read(CancellationToken.None);
+
+        var inFlightRevision = service.CaptureWorldRevision();
+        await service.ReportPlayerLocations(PlayersAt(62_500, -4_200));
+        _ = await queue.Read(CancellationToken.None);
+        var transitionRevision = service.CaptureWorldRevision();
+
+        await service.ReportGameData(World("None"), inFlightRevision);
+        var olderWorld = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(olderWorld.Snapshot.Players.Data!).Location.Kind);
+
+        await service.ReportGameData(World("None"), transitionRevision);
+        var refreshedWorld = await queue.Read(CancellationToken.None);
+        Assert.Equal(PlayerLocationKind.Overworld, Assert.Single(refreshedWorld.Snapshot.Players.Data!).Location.Kind);
+    }
+
+    [Fact]
+    public async Task OfflinePlayersArePrunedFromPendingRefreshes()
+    {
+        var (service, queue, refreshSignal) = CreateCollectorService();
+        await service.ReportPlayerLocations(PlayersAt(12_500, -4_200));
+        _ = await queue.Read(CancellationToken.None);
+        _ = await refreshSignal.WaitForRevisionAfter(0, CancellationToken.None);
+        await service.ReportGameData(World("None"), service.CaptureWorldRevision());
+        _ = await queue.Read(CancellationToken.None);
+
+        await service.ReportPlayerLocations(PlayersAt(62_500, -4_200));
+        _ = await queue.Read(CancellationToken.None);
+        Assert.Equal(2, service.CaptureWorldRevision());
+
+        await service.ReportPlayerLocations(new PlayerListResponse { Players = [] });
+        _ = await queue.Read(CancellationToken.None);
+        await service.ReportPlayerLocations(PlayersAt(62_500, -4_200));
+        var rejoined = await queue.Read(CancellationToken.None);
+
+        Assert.Equal(3, service.CaptureWorldRevision());
+        Assert.Equal(PlayerLocationKind.Unknown, Assert.Single(rejoined.Snapshot.Players.Data!).Location.Kind);
+        Assert.Equal(3, await refreshSignal.WaitForRevisionAfter(1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RefreshSignalCoalescesToTheLatestRevision()
+    {
+        var signal = new GameDataRefreshSignal();
+        signal.Request(2);
+        signal.Request(3);
+        signal.Request(4);
+
+        Assert.Equal(4, await signal.WaitForRevisionAfter(1, CancellationToken.None));
     }
 
     [Theory]
@@ -316,6 +408,21 @@ public sealed class CollectorIngestTests
         PrivacyKey = Convert.ToBase64String(Enumerable.Range(0, 32).Select(value => (byte)value).ToArray())
     };
 
+    private static (SnapshotCollectorApiService Service, LatestSnapshotQueue Queue, GameDataRefreshSignal Signal)
+        CreateCollectorService()
+    {
+        var queue = new LatestSnapshotQueue();
+        var signal = new GameDataRefreshSignal();
+        var service = new SnapshotCollectorApiService(
+            new SnapshotSanitizer(new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings())),
+            queue,
+            signal,
+            new StaticOptionsMonitor<CollectorSettings>(new()),
+            TimeProvider.System,
+            NullLogger<SnapshotCollectorApiService>.Instance);
+        return (service, queue, signal);
+    }
+
     private static PlayerListResponse Players() => new()
     {
         Players = [new PalworldPlayer
@@ -333,7 +440,12 @@ public sealed class CollectorIngestTests
         }]
     };
 
-    private static WorldActorSnapshotResponse World() => new()
+    private static PlayerListResponse PlayersAt(double x, double y) => Players() with
+    {
+        Players = [Players().Players[0] with { LocationX = x, LocationY = y }]
+    };
+
+    private static WorldActorSnapshotResponse World(string stage = "Dungeon_Boss_Secret") => new()
     {
         Time = "2026-07-21 12:00",
         Fps = 60,
@@ -342,7 +454,7 @@ public sealed class CollectorIngestTests
         [
             new WorldActor { Type = "PalBox", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", LocationX = 12_000, LocationY = -4_000, LocationZ = 0 },
             new WorldActor { Type = "Character", UnitType = "BaseCampPal", GuildId = "raw-guild-id", Level = 10, HitPoints = 100, MaxHitPoints = 120, LocationX = 12_010, LocationY = -3_990 },
-            new WorldActor { Type = "Character", UnitType = "Player", UserId = "raw-user-id", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", Stage = "Dungeon_Boss_Secret", IpAddress = "198.51.100.4" }
+            new WorldActor { Type = "Character", UnitType = "Player", UserId = "raw-user-id", GuildId = "raw-guild-id", GuildName = "Synthetic Guild", Stage = stage, IpAddress = "198.51.100.4" }
         ]
     };
 

@@ -64,6 +64,7 @@ public sealed class OptionsAndRegistrationTests
     [Theory]
     [InlineData("PlayerLocationUpdateIntervalMs")]
     [InlineData("GameDataUpdateIntervalMs")]
+    [InlineData("StageRefreshDistance")]
     [InlineData("ServerSettingsUpdateIntervalMs")]
     [InlineData("FailureRetryIntervalMs")]
     [InlineData("PalworldHealthCacheDurationMs")]

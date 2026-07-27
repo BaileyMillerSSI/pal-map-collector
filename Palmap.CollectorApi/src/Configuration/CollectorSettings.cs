@@ -13,6 +13,9 @@ internal sealed record CollectorSettings
     public int GameDataUpdateIntervalMs { get; init; } = 30_000;
 
     [Range(1, int.MaxValue)]
+    public int StageRefreshDistance { get; init; } = 50_000;
+
+    [Range(1, int.MaxValue)]
     public int ServerSettingsUpdateIntervalMs { get; init; } = 3_600_000;
 
     [Range(1, int.MaxValue)]

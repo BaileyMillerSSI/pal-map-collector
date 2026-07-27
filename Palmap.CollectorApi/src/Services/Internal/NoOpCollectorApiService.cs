@@ -11,7 +11,12 @@ internal sealed class NoOpCollectorApiService(ILogger<NoOpCollectorApiService> l
         return Task.CompletedTask;
     }
 
-    public Task ReportGameData(WorldActorSnapshotResponse snapshot, CancellationToken cancellationToken = default)
+    public long CaptureWorldRevision() => 0;
+
+    public Task ReportGameData(
+        WorldActorSnapshotResponse snapshot,
+        long requestedRevision,
+        CancellationToken cancellationToken = default)
     {
         logger.LogDebug("Collected {ActorCount} world actors; no collector backend is configured.", snapshot.ActorData.Count);
         return Task.CompletedTask;

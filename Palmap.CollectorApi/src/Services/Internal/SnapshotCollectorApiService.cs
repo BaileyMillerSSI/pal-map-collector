@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Palmap.CollectorApi.Configuration;
 using Palmap.CollectorApi.Services;
 using Palmap.PalworldApi.Models;
 using Palmap.Protocol;
@@ -8,6 +10,8 @@ namespace Palmap.CollectorApi.Services.Internal;
 internal sealed class SnapshotCollectorApiService(
     SnapshotSanitizer sanitizer,
     LatestSnapshotQueue queue,
+    GameDataRefreshSignal gameDataRefreshSignal,
+    IOptionsMonitor<CollectorSettings> collectorSettings,
     TimeProvider timeProvider,
     ILogger<SnapshotCollectorApiService> logger) : ICollectorApiService
 {
@@ -20,6 +24,7 @@ internal sealed class SnapshotCollectorApiService(
     private SourceSlot _worldSlot;
     private SourceSlot _serverSlot;
     private HashSet<string> _stageRefreshPending = [];
+    private long _stageRevision;
     private long _sequence;
 
     public Task ReportPlayerLocations(PlayerListResponse players, CancellationToken cancellationToken = default)
@@ -27,8 +32,37 @@ internal sealed class SnapshotCollectorApiService(
         Update(
             () =>
             {
-                _players = sanitizer.Players(players);
-                _stageRefreshPending = _players.Select(player => player.Id).ToHashSet(StringComparer.Ordinal);
+                var nextPlayers = sanitizer.Players(players);
+                var previous = _players?.ToDictionary(player => player.Id, StringComparer.Ordinal)
+                    ?? new Dictionary<string, SanitizedPlayer>(StringComparer.Ordinal);
+                var online = nextPlayers.Select(player => player.Id).ToHashSet(StringComparer.Ordinal);
+                var threshold = collectorSettings.CurrentValue.StageRefreshDistance;
+                var thresholdSquared = (double)threshold * threshold;
+                var refreshWorld = false;
+                foreach (var player in nextPlayers)
+                {
+                    if (!previous.TryGetValue(player.Id, out var oldPlayer))
+                    {
+                        refreshWorld |= _stageRefreshPending.Add(player.Id);
+                        continue;
+                    }
+
+                    var distanceSquared =
+                        Math.Pow(player.X - oldPlayer.X, 2) +
+                        Math.Pow(player.Y - oldPlayer.Y, 2);
+                    if (distanceSquared >= thresholdSquared)
+                    {
+                        refreshWorld |= _stageRefreshPending.Add(player.Id);
+                    }
+                }
+
+                _stageRefreshPending.RemoveWhere(id => !online.Contains(id));
+                if (refreshWorld)
+                {
+                    gameDataRefreshSignal.Request(++_stageRevision);
+                }
+
+                _players = nextPlayers;
                 _playersSlot = _playersSlot.Succeeded(timeProvider.GetUtcNow());
             },
             () => _playersSlot = _playersSlot.Failed(timeProvider.GetUtcNow(), SnapshotSourceState.Unavailable),
@@ -36,13 +70,28 @@ internal sealed class SnapshotCollectorApiService(
         return Task.CompletedTask;
     }
 
-    public Task ReportGameData(WorldActorSnapshotResponse snapshot, CancellationToken cancellationToken = default)
+    public long CaptureWorldRevision()
+    {
+        lock (_gate)
+        {
+            return _stageRevision;
+        }
+    }
+
+    public Task ReportGameData(
+        WorldActorSnapshotResponse snapshot,
+        long requestedRevision,
+        CancellationToken cancellationToken = default)
     {
         Update(
             () =>
             {
                 _world = sanitizer.World(snapshot);
-                _stageRefreshPending.Clear();
+                if (requestedRevision == _stageRevision)
+                {
+                    _stageRefreshPending.Clear();
+                }
+
                 _worldSlot = _worldSlot.Succeeded(timeProvider.GetUtcNow());
             },
             () => _worldSlot = _worldSlot.Failed(timeProvider.GetUtcNow(), SnapshotSourceState.Unavailable),
