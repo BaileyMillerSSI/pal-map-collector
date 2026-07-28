@@ -97,11 +97,20 @@ internal sealed class PalworldApiHealthService(
 
         if (newState == Healthy)
         {
-            logger.LogInformation("Palworld REST API is available.");
+            if (previousState == Unknown)
+            {
+                logger.LogDebug("Palworld REST API is available.");
+            }
+            else
+            {
+                logger.LogInformation("Palworld REST API recovered; polling resumed and fresh data is available again.");
+            }
         }
         else
         {
-            logger.LogWarning("Palworld REST API is unavailable; reporters will wait before retrying.");
+            logger.LogWarning(
+                "Palworld REST API became unavailable; polling is paused and snapshots retain the last known data. " +
+                "Check that Palworld is running and the REST credentials are correct; the collector will retry.");
         }
     }
 }

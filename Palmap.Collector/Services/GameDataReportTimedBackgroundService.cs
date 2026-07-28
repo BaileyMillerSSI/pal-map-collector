@@ -32,7 +32,7 @@ internal sealed class GameDataReportTimedBackgroundService(
         var snapshot = await palworldApiService.WorldActorSnapshot(cancellationToken);
         await collectorApiService.ReportGameData(snapshot, requestedRevision, cancellationToken);
         _completedRevision = requestedRevision;
-        logger.LogInformation("Reported {ActorCount} world actors.", snapshot.ActorData.Count);
+        logger.LogDebug("Collected {ActorCount} world actors.", snapshot.ActorData.Count);
     }
 
     protected override async Task WaitAfterSuccessfulReport(CancellationToken cancellationToken)

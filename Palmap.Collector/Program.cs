@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Palmap.Collector.Health;
+using Palmap.Collector.Logging;
 using Palmap.Collector.Services;
 using Palmap.CollectorApi;
 using Palmap.PalworldApi;
 using Serilog;
+using Serilog.Events;
 
 namespace Palmap.Collector;
 
@@ -19,9 +21,17 @@ internal static class Program
         try
         {
             var builder = WebApplication.CreateBuilder(args);
-            builder.Services.AddSerilog((services, configuration) => configuration
-                .ReadFrom.Configuration(builder.Configuration)
-                .ReadFrom.Services(services));
+            var logLevel = CollectorLogLevel.Parse(builder.Configuration["LogLevel"]);
+            Log.Logger = logLevel.Apply(new LoggerConfiguration()
+                    .WriteTo.Console())
+                .CreateBootstrapLogger();
+
+            builder.Services.AddSerilog((services, configuration) =>
+            {
+                configuration.ReadFrom.Configuration(builder.Configuration)
+                    .ReadFrom.Services(services);
+                logLevel.Apply(configuration);
+            });
 
             builder
                 .AddPalworldApi()
@@ -34,7 +44,13 @@ internal static class Program
                 .AddCheck<PalworldApiHealthCheck>("palworld-api", tags: ["ready"]);
 
             var app = builder.Build();
-            app.UseSerilogRequestLogging();
+            app.UseSerilogRequestLogging(options =>
+            {
+                options.GetLevel = (_, _, exception) =>
+                    exception is null
+                        ? LogEventLevel.Debug
+                        : LogEventLevel.Error;
+            });
             app.MapHealthChecks("/health/live", new HealthCheckOptions
             {
                 Predicate = registration => registration.Tags.Contains("live")
@@ -43,12 +59,21 @@ internal static class Program
             {
                 Predicate = registration => registration.Tags.Contains("ready")
             });
+            app.Lifetime.ApplicationStarted.Register(() =>
+                Log.Information(
+                    "Palmap Collector started at {LogLevel}; Palworld polling and snapshot delivery are active.",
+                    logLevel.Name));
+            app.Lifetime.ApplicationStopping.Register(() =>
+                Log.Information("Palmap Collector is shutting down; polling and delivery are stopping."));
 
             await app.RunAsync();
         }
         catch (Exception exception)
         {
-            Log.Fatal(exception, "Palmap Collector terminated unexpectedly.");
+            Log.Fatal(
+                "Palmap Collector stopped and snapshots will not be delivered ({ExceptionType}). " +
+                "Review the configuration and preceding log messages before restarting.",
+                exception.GetType().Name);
             throw;
         }
         finally

@@ -9,6 +9,8 @@ internal abstract class TimedReporterBackgroundService(
     ICollectorDelay collectorDelay,
     ILogger logger) : BackgroundService
 {
+    private int _consecutiveSourceFailures;
+
     protected abstract int ReportIntervalMs { get; }
 
     protected abstract int FailureRetryIntervalMs { get; }
@@ -23,7 +25,7 @@ internal abstract class TimedReporterBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("{Service} is starting.", GetType().Name);
+        logger.LogDebug("{Service} is starting.", GetType().Name);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -31,6 +33,7 @@ internal abstract class TimedReporterBackgroundService(
             {
                 await palworldHealthService.WaitUntilHealthy(stoppingToken);
                 await ReportOnce(stoppingToken);
+                LogSourceRecovery();
                 await WaitAfterSuccessfulReport(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -39,16 +42,22 @@ internal abstract class TimedReporterBackgroundService(
             }
             catch (Exception exception)
             {
+                var failure = ClassifySourceFailure(exception);
                 if (exception is HttpRequestException)
                 {
                     palworldHealthService.MarkUnhealthy();
+                    logger.LogDebug(
+                        "Skipped {ReportDescription} after a Palworld REST failure ({ExceptionType}); " +
+                        "the shared health gate paused polling.",
+                        ReportDescription,
+                        exception.GetType().Name);
+                }
+                else
+                {
+                    LogSourceFailure(exception);
                 }
 
-                await ReportFailure(ClassifySourceFailure(exception), stoppingToken);
-                logger.LogError(
-                    "An error occurred while reporting {ReportDescription} ({ExceptionType}).",
-                    ReportDescription,
-                    exception.GetType().Name);
+                await ReportFailure(failure, stoppingToken);
 
                 try
                 {
@@ -61,7 +70,42 @@ internal abstract class TimedReporterBackgroundService(
             }
         }
 
-        logger.LogInformation("{Service} is stopping.", GetType().Name);
+        logger.LogDebug("{Service} is stopping.", GetType().Name);
+    }
+
+    internal void LogSourceFailure(Exception exception)
+    {
+        _consecutiveSourceFailures++;
+        if (_consecutiveSourceFailures == 1)
+        {
+            logger.LogWarning(
+                "Collecting {ReportDescription} failed ({ExceptionType}); the related snapshot section " +
+                "may be stale. The collector will retry; update or restart the collector if this persists.",
+                ReportDescription,
+                exception.GetType().Name);
+            return;
+        }
+
+        logger.LogDebug(
+            "Collecting {ReportDescription} is still failing ({ExceptionType}, attempt {FailureCount}).",
+            ReportDescription,
+            exception.GetType().Name,
+            _consecutiveSourceFailures);
+    }
+
+    internal void LogSourceRecovery()
+    {
+        if (_consecutiveSourceFailures == 0)
+        {
+            return;
+        }
+
+        logger.LogInformation(
+            "Collecting {ReportDescription} recovered after {FailureCount} failed attempts; " +
+            "fresh data is available again.",
+            ReportDescription,
+            _consecutiveSourceFailures);
+        _consecutiveSourceFailures = 0;
     }
 
     internal static CollectorSourceFailure ClassifySourceFailure(Exception exception) =>
