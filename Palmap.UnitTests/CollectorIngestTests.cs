@@ -23,35 +23,57 @@ public sealed class CollectorIngestTests
     private const string ValidClientSecret = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
 
     [Fact]
-    public void IngestOptionsBindThroughNormalConfigurationAndRequireExplicitDevelopmentHttp()
+    public void IngestOptionsDefaultToTheHostedPalMapEndpoint()
     {
-        var development = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
-        {
-            EnvironmentName = Environments.Development
-        });
-        AddValidIngestConfiguration(development.Configuration, "http://ingest.example.test/api/ingest/v1/snapshots");
-        development.Configuration["PalmapIngest:AllowInsecureHttp"] = "true";
-        development.AddCollectorApi();
-        using var developmentHost = development.Build();
-
-        var settings = developmentHost.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
-
-        Assert.Equal(ValidClientId, settings.ClientId);
-        Assert.IsType<SnapshotCollectorApiService>(developmentHost.Services.GetRequiredService<ICollectorApiService>());
-
-        var production = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
             EnvironmentName = Environments.Production
         });
-        AddValidIngestConfiguration(production.Configuration, "http://ingest.example.test/api/ingest/v1/snapshots");
-        production.Configuration["PalmapIngest:AllowInsecureHttp"] = "true";
-        production.AddCollectorApi();
-        using var productionHost = production.Build();
+        AddValidIngestConfiguration(builder.Configuration);
+        builder.AddCollectorApi();
+        using var host = builder.Build();
 
-        Assert.Throws<OptionsValidationException>(() =>
+        var settings = host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
+
+        Assert.Equal("https://pal-map.com", PalmapIngress.DefaultBaseUrl);
+        Assert.Equal("https://pal-map.com/api/ingest/v1/snapshots", settings.Endpoint);
+        Assert.Equal(ValidClientId, settings.ClientId);
+        Assert.IsType<SnapshotCollectorApiService>(host.Services.GetRequiredService<ICollectorApiService>());
+    }
+
+    [Theory]
+    [InlineData("Development", false, "https://ingest.example.test/api/ingest/v1/snapshots", false)]
+    [InlineData("Development", true, "https://ingest.example.test/api/ingest/v1/snapshots", true)]
+    [InlineData("Production", true, "https://ingest.example.test/api/ingest/v1/snapshots", false)]
+    [InlineData("Development", false, "http://ingest.example.test/api/ingest/v1/snapshots", false)]
+    [InlineData("Development", true, "http://ingest.example.test/api/ingest/v1/snapshots", true)]
+    [InlineData("Production", true, "http://ingest.example.test/api/ingest/v1/snapshots", false)]
+    public void IngestEndpointOverridesRequireExplicitDevelopmentInsecureMode(
+        string environment,
+        bool allowInsecureHttp,
+        string endpoint,
+        bool valid)
+    {
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
-            _ = productionHost.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
+            EnvironmentName = environment
         });
+        AddValidIngestConfiguration(builder.Configuration, endpoint);
+        builder.Configuration["PalmapIngest:AllowInsecureHttp"] = allowInsecureHttp.ToString();
+        builder.AddCollectorApi();
+        using var host = builder.Build();
+
+        if (valid)
+        {
+            Assert.Equal(endpoint, host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value.Endpoint);
+        }
+        else
+        {
+            Assert.Throws<OptionsValidationException>(() =>
+            {
+                _ = host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
+            });
+        }
     }
 
     [Theory]
@@ -60,7 +82,7 @@ public sealed class CollectorIngestTests
     public void PrivacyKeyMustBeExactly256Bits(string privacyKey)
     {
         var builder = Host.CreateApplicationBuilder();
-        AddValidIngestConfiguration(builder.Configuration, "https://ingest.example.test/api/ingest/v1/snapshots");
+        AddValidIngestConfiguration(builder.Configuration);
         builder.Configuration["PalmapIngest:PrivacyKey"] = privacyKey;
         builder.AddCollectorApi();
         using var host = builder.Build();
@@ -92,9 +114,7 @@ public sealed class CollectorIngestTests
     {
         AssertInvalidIngestConfiguration(configuration =>
         {
-            AddValidIngestConfiguration(
-                configuration,
-                "https://ingest.example.test/api/ingest/v1/snapshots");
+            AddValidIngestConfiguration(configuration);
             configuration["PalmapIngest:ClientId"] = clientId;
             configuration["PalmapIngest:ClientSecret"] = clientSecret;
         });
@@ -105,23 +125,17 @@ public sealed class CollectorIngestTests
     {
         AssertInvalidIngestConfiguration(configuration =>
         {
-            AddValidIngestConfiguration(
-                configuration,
-                "https://ingest.example.test/api/ingest/v1/snapshots");
+            AddValidIngestConfiguration(configuration);
             configuration["PalmapIngest:ClientId"] = $"pmc_{new string('A', 15)}";
         });
         AssertInvalidIngestConfiguration(configuration =>
         {
-            AddValidIngestConfiguration(
-                configuration,
-                "https://ingest.example.test/api/ingest/v1/snapshots");
+            AddValidIngestConfiguration(configuration);
             configuration["PalmapIngest:ClientId"] = $"pmc_{new string('A', 61)}";
         });
         AssertInvalidIngestConfiguration(configuration =>
         {
-            AddValidIngestConfiguration(
-                configuration,
-                "https://ingest.example.test/api/ingest/v1/snapshots");
+            AddValidIngestConfiguration(configuration);
             configuration["PalmapIngest:ClientSecret"] = new string('B', 129);
         });
     }
@@ -133,9 +147,7 @@ public sealed class CollectorIngestTests
     {
         var expectedClientId = $"pmc_{new string('A', suffixLength)}";
         var builder = Host.CreateApplicationBuilder();
-        AddValidIngestConfiguration(
-            builder.Configuration,
-            "https://ingest.example.test/api/ingest/v1/snapshots");
+        AddValidIngestConfiguration(builder.Configuration);
         builder.Configuration["PalmapIngest:ClientId"] = expectedClientId;
         builder.AddCollectorApi();
         using var host = builder.Build();
@@ -435,10 +447,12 @@ public sealed class CollectorIngestTests
     public async Task SendUsesBasicAuthStableBytesAndTreatsTimeoutAsRetry()
     {
         byte[]? captured = null;
+        Uri? requestUri = null;
         AuthenticationHeaderValue? authorization = null;
         var handler = new AsyncHandler(async (request, cancellationToken) =>
         {
             authorization = request.Headers.Authorization;
+            requestUri = request.RequestUri;
             captured = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
             return new HttpResponseMessage(HttpStatusCode.Accepted);
         });
@@ -451,6 +465,7 @@ public sealed class CollectorIngestTests
         Assert.Equal(DeliveryOutcome.Accepted, accepted.Outcome);
         Assert.Equal(stable, captured);
         Assert.Equal("Basic", authorization?.Scheme);
+        Assert.Equal(new Uri(PalmapIngestSettings.DefaultEndpoint), requestUri);
         Assert.Equal(
             Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{ValidClientId}:{ValidClientSecret}")),
             authorization?.Parameter);
@@ -475,9 +490,13 @@ public sealed class CollectorIngestTests
         TimeProvider.System,
         NullLogger<SnapshotDeliveryService>.Instance);
 
-    private static void AddValidIngestConfiguration(IConfiguration configuration, string endpoint)
+    private static void AddValidIngestConfiguration(IConfiguration configuration, string? endpoint = null)
     {
-        configuration["PalmapIngest:Endpoint"] = endpoint;
+        if (endpoint is not null)
+        {
+            configuration["PalmapIngest:Endpoint"] = endpoint;
+        }
+
         configuration["PalmapIngest:ClientId"] = ValidClientId;
         configuration["PalmapIngest:ClientSecret"] = ValidClientSecret;
         configuration["PalmapIngest:PrivacyKey"] = Convert.ToBase64String(Enumerable.Range(0, 32).Select(value => (byte)value).ToArray());
@@ -485,7 +504,6 @@ public sealed class CollectorIngestTests
 
     private static PalmapIngestSettings ValidSettings() => new()
     {
-        Endpoint = "https://ingest.example.test/api/ingest/v1/snapshots",
         ClientId = ValidClientId,
         ClientSecret = ValidClientSecret,
         PrivacyKey = Convert.ToBase64String(Enumerable.Range(0, 32).Select(value => (byte)value).ToArray())

@@ -26,7 +26,7 @@ docker compose ps
 docker compose logs -f collector
 ```
 
-Compose reads the ignored `config/*.env` copies, while only `*.env.example` templates are tracked. The templates deliberately contain local-only demonstration credentials, a documentation-only ingest address, and a public, non-secret privacy-key placeholder. Change the Palworld password, set the real Palmap ingest URL, provision a Palmap client pair, and generate a unique privacy key before adapting the sample for a real server.
+Compose reads the ignored `config/*.env` copies, while only `*.env.example` templates are tracked. The templates deliberately contain local-only demonstration credentials, a documentation-only LAN ingest override, and a public, non-secret privacy-key placeholder. Change the Palworld password, provision a Palmap client pair, and generate a unique privacy key before adapting the sample for a real server. Production collectors use `https://pal-map.com/api/ingest/v1/snapshots` automatically; only local Development testing should retain an endpoint override.
 
 After both services are healthy:
 
@@ -51,7 +51,6 @@ Start a Palworld server with its REST API enabled, then override the checked-in 
 $env:PalworldApi__BaseUrl = "http://127.0.0.1:8212"
 $env:PalworldApi__Admin__Username = "admin"
 $env:PalworldApi__Admin__Password = "your-admin-password"
-$env:PalmapIngest__Endpoint = "https://palmap.example/api/ingest/v1/snapshots"
 $env:PalmapIngest__ClientId = "your-issued-client-id"
 $env:PalmapIngest__ClientSecret = "your-issued-client-secret"
 $env:PalmapIngest__PrivacyKey = "your-base64-encoded-32-byte-privacy-key"
@@ -70,11 +69,11 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `PalworldApi:BaseUrl` | `http://localhost:8212` | Palworld REST origin, including TCP port 8212 |
 | `PalworldApi:Admin:Username` | `admin` | Palworld's REST Basic-auth username |
 | `PalworldApi:Admin:Password` | none | REST admin password; required at startup |
-| `PalmapIngest:Endpoint` | none | Absolute Palmap snapshot v1 ingest URL without user-info, query, or fragment; required at startup |
+| `PalmapIngest:Endpoint` | `https://pal-map.com/api/ingest/v1/snapshots` | Hosted Palmap snapshot v1 ingest URL; override only for explicit local Development testing |
 | `PalmapIngest:ClientId` | none | Issued 20-to-64-character Server/Client ID: `pmc_` plus 16 to 60 base64url characters |
 | `PalmapIngest:ClientSecret` | none | Issued base64url client secret used for HTTP Basic authentication |
 | `PalmapIngest:PrivacyKey` | none | Unique 32-byte key encoded as base64; used only to derive opaque identifiers |
-| `PalmapIngest:AllowInsecureHttp` | `false` | Permit HTTP only when the process also runs in `Development` |
+| `PalmapIngest:AllowInsecureHttp` | `false` | Permit an endpoint override only when the process also runs in `Development` |
 | `PalmapIngest:RequestTimeoutMs` | `20000` | Timeout for one ingest request |
 | `PalmapIngest:MaximumDeliveryAttempts` | `5` | Bounded attempts for one stable snapshot body |
 | `PalmapIngest:MaximumRetryDelayMs` | `60000` | Maximum retry and server-requested backoff delay |
@@ -85,7 +84,7 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `Collector:FailureRetryIntervalMs` | `5000` | Retry period after an unavailable server or failed report |
 | `Collector:PalworldHealthCacheDurationMs` | `5000` | Shared health-probe cache duration |
 
-URLs must be absolute HTTP or HTTPS URLs. The ingest URL must use HTTPS unless both the environment is `Development` and `PalmapIngest:AllowInsecureHttp` is `true`. All intervals must be between 1 and `2147483647` milliseconds. The Palworld password, Palmap client secret, and privacy key have no real checked-in defaults; missing or malformed configuration stops the process during startup with an options-validation error.
+Endpoint overrides must be absolute HTTP or HTTPS URLs and cannot contain user information, a query, or a fragment. Any value other than the hosted default requires both the `Development` environment and `PalmapIngest:AllowInsecureHttp=true`, even when the override itself uses HTTPS. All intervals must be between 1 and `2147483647` milliseconds. The Palworld password, Palmap client secret, and privacy key have no real checked-in defaults; missing or malformed configuration stops the process during startup with an options-validation error.
 
 Reporter loops update retained sanitized state without waiting for network delivery. The delivery worker sends one stable serialized envelope per attempt sequence, honors bounded `Retry-After` values, and retains only the latest pending snapshot during outages. Authentication and protocol-compatibility failures stop the collector; rejected payloads and exhausted transient retries move on to the latest available state. Raw player, account, platform, network, and Palworld error data are neither included in the public contract nor written to delivery logs.
 
@@ -159,4 +158,4 @@ No registry secret is required. The workflow grants `packages: write` only to th
 - A healthy Palworld process with an unhealthy collector readiness endpoint usually indicates a URL or admin-password mismatch. The password must match in the copied `server.env` and `collector.env` files.
 - A failing `/game-data` request usually means `ENABLE_GAMEDATA_API=true` was not applied before the Palworld server started.
 - If port 8212 or 8080 is already occupied, change the host side of the loopback port mapping and set the corresponding integration-test URL. The collector-to-Palworld URL inside Compose remains `http://palworld:8212`.
-- Repeated delivery retries usually indicate an unreachable ingest URL or an unavailable hosted API. An HTTP LAN URL is accepted only when both `DOTNET_ENVIRONMENT=Development` and `PalmapIngest__AllowInsecureHttp=true`; production ingest must use HTTPS.
+- Repeated delivery retries usually indicate an unreachable ingest URL or an unavailable hosted API. Any endpoint override is accepted only when both `DOTNET_ENVIRONMENT=Development` and `PalmapIngest__AllowInsecureHttp=true`; production uses the hosted HTTPS default.

@@ -31,10 +31,11 @@ internal sealed class PalmapIngestSettingsValidator(IHostEnvironment environment
                 errors.Add("PalmapIngest:Endpoint cannot contain user information, a query, or a fragment.");
             }
 
-            if (endpoint.Scheme == Uri.UriSchemeHttp &&
+            if (!string.Equals(settings.Endpoint, PalmapIngestSettings.DefaultEndpoint, StringComparison.Ordinal) &&
                 !(environment.IsDevelopment() && settings.AllowInsecureHttp))
             {
-                errors.Add("An HTTP PalmapIngest:Endpoint requires Development and PalmapIngest:AllowInsecureHttp=true.");
+                errors.Add(
+                    "Overriding PalmapIngest:Endpoint requires Development and PalmapIngest:AllowInsecureHttp=true.");
             }
         }
 
