@@ -43,6 +43,18 @@ docker compose down
 
 World data remains in `./palworld`. REST port 8212 and the collector port are bound to host loopback only. Do not publicly expose the Palworld REST API: its credentials grant administrative access.
 
+### Use the published collector image
+
+For the simplest installation, use the rolling multi-architecture image:
+
+```yaml
+services:
+  collector:
+    image: ghcr.io/baileymillerssi/pal-map-collector:latest
+```
+
+The same image reference supports both `linux/amd64` and `linux/arm64`; Docker selects the matching architecture automatically. During pre-beta, `latest` follows the newest successful `main` build and can include breaking changes. Pin the corresponding immutable `sha-<full-git-sha>` tag when reproducible deployments and deliberate upgrades are more important than automatically receiving the newest build.
+
 ## Local .NET development
 
 Start a Palworld server with its REST API enabled, then override the checked-in development values through environment variables or user secrets:
@@ -148,7 +160,7 @@ The `CI/CD` GitHub Actions workflow runs for pull requests targeting `main`. It 
 
 The container job builds and runs `/health/live` for both `linux/amd64` and `linux/arm64` on pull requests and pushes to `main`. ARM64 is exercised through QEMU on the GitHub-hosted runner, and pull requests never publish images.
 
-After those checks pass on a push to `main`, the workflow publishes a multi-architecture image to `ghcr.io/<owner>/<repository>` with only the immutable `sha-<full-commit-sha>` tag. Collector release tags publish matching semantic image tags; `latest` moves only as part of a separately authorized stable release and never for a prerelease or ordinary `main` build. The existing legacy `latest` predates this multi-architecture policy and is not a recommended deployment input. Published images include OCI metadata, SBOM/provenance data, and a GitHub artifact attestation. See [RELEASING.md](RELEASING.md) for the exact collector image and independent `Palmap.Protocol` release policies.
+After those checks pass on a push to `main`, the workflow publishes one multi-architecture image to `ghcr.io/<owner>/<repository>` with both the rolling `latest` tag and the immutable `sha-<full-commit-sha>` tag. A failed architecture build or liveness check prevents publication, so it cannot move `latest`. Collector release tags publish matching semantic image tags; stable releases also update `latest`, while prereleases do not. Published images include OCI metadata, SBOM/provenance data, and a GitHub artifact attestation. See [RELEASING.md](RELEASING.md) for the exact collector image and independent `Palmap.Protocol` release policies.
 
 No registry secret is required. The workflow grants `packages: write` only to the container job. Repository or organization policy must allow GitHub Actions to create and write packages; package visibility and access can then be managed from the package settings in GitHub.
 
