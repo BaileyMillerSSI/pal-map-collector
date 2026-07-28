@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>Palmap.Protocol</PackageId>
-    <Version>1.0.0-rc.1</Version>
+    <Version>1.0.0-rc.2</Version>
     <Authors>Bailey Miller</Authors>
     <Description>Versioned, privacy-safe wire contracts for Palmap collectors and ingest services.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>

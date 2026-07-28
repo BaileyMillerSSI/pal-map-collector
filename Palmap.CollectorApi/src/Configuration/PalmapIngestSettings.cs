@@ -1,13 +1,16 @@
 using System.ComponentModel.DataAnnotations;
+using Palmap.Protocol;
 
 namespace Palmap.CollectorApi.Configuration;
 
 internal sealed record PalmapIngestSettings
 {
     public const string SectionName = "PalmapIngest";
+    public const string SnapshotV1Path = "/api/ingest/v1/snapshots";
+    public const string DefaultEndpoint = PalmapIngress.DefaultBaseUrl + SnapshotV1Path;
 
     [Required]
-    public string? Endpoint { get; init; }
+    public string? Endpoint { get; init; } = DefaultEndpoint;
 
     [Required]
     public string? ClientId { get; init; }
