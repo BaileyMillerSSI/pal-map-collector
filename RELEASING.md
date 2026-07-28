@@ -4,12 +4,12 @@ The collector image is built for both `linux/amd64` and `linux/arm64`. Every pul
 
 ## Image tags
 
-- A successful push to `main` publishes only `sha-<full-git-sha>`. This tag is the immutable deployment input and never moves.
+- A successful push to `main` publishes one multi-architecture manifest with both `latest` and `sha-<full-git-sha>`. The SHA tag never moves.
 - A collector tag matching `vMAJOR.MINOR.PATCH[-prerelease]` publishes the corresponding `MAJOR.MINOR.PATCH[-prerelease]` multi-architecture image tag.
-- `latest` moves only for a stable `vMAJOR.MINOR.PATCH` collector release. A prerelease never changes it.
+- `latest` follows the newest successful `main` build during pre-beta. A stable collector release also moves it; a prerelease does not.
 - Pull requests, protocol tags, and manually dispatched workflows verify images locally and never publish them.
 
-The existing legacy `latest` tag predates multi-architecture verification and must not be recommended, deleted, or repointed as part of an ordinary `main` build. Use a verified immutable SHA tag. Moving `latest` requires a separately authorized stable collector release after both architecture checks pass.
+Both architecture builds and liveness checks complete before the publish step. A failed check therefore cannot move `latest` or create an immutable SHA tag. `latest` is the simplest installation reference, but it can include breaking changes during pre-beta; use the SHA tag for reproducible deployments and rollbacks.
 
 Published manifests include BuildKit SBOM and maximum-mode provenance attestations. The workflow also publishes a GitHub artifact attestation for the registry digest.
 
@@ -30,10 +30,9 @@ A protocol-tagged run fails instead of silently omitting the package when the va
 
 ## Collector release checklist
 
-1. Confirm `main` is green and its immutable SHA image passed both architecture smoke tests.
+1. Confirm `main` is green and its `latest` and immutable SHA tags resolve to the same manifest.
 2. Confirm the collector version is compatible with the currently deployed hosted ingest API.
-3. Obtain explicit authorization before moving the legacy `latest` tag.
-4. Create and push an annotated `vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-prerelease` tag.
-5. Verify the published image manifest lists both `linux/amd64` and `linux/arm64`, then verify its attestations.
+3. Create and push an annotated `vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-prerelease` tag.
+4. Verify the published image manifest lists both `linux/amd64` and `linux/arm64`, then verify its attestations.
 
 For a protocol release, separately verify the package contract and create a `protocol-vMAJOR.MINOR.PATCH[-prerelease]` tag after confirming the NuGet.org trusted-publishing policy and `NUGET_USER` repository variable are configured.
