@@ -2,7 +2,7 @@
 
 Palmap Collector polls the authenticated REST API exposed by a Palworld dedicated server. It reads player locations, world actor snapshots, and server settings on independent schedules, sanitizes them into the public Palmap snapshot v1 contract, and delivers the latest snapshot to a configured Palmap ingest endpoint.
 
-The service targets .NET 10, emits structured console logs through Serilog, and exposes separate liveness and Palworld-dependent readiness checks. Product data flows outbound only; the health listener should remain private or loopback-bound.
+The service targets .NET 10, emits structured console logs, and exposes separate liveness and Palworld-dependent readiness checks. Product data flows outbound only; the health listener should remain private or loopback-bound.
 
 ## Prerequisites
 
@@ -66,6 +66,7 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 
 | Setting | Default | Purpose |
 | --- | ---: | --- |
+| `LogLevel` | `Information` | Console verbosity: `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, or `None` |
 | `PalworldApi:BaseUrl` | `http://localhost:8212` | Palworld REST origin, including TCP port 8212 |
 | `PalworldApi:Admin:Username` | `admin` | Palworld's REST Basic-auth username |
 | `PalworldApi:Admin:Password` | none | REST admin password; required at startup |
@@ -101,14 +102,15 @@ SHOW_PLAYER_LIST=true
 
 ### Logging
 
-Serilog writes structured text to stdout. Control its default or category levels through `appsettings.json` or environment variables:
+The collector writes structured text to stdout. Set the top-level `LogLevel` in configuration or as an environment variable:
 
 ```powershell
-$env:Serilog__MinimumLevel__Default = "Debug"
-$env:Serilog__MinimumLevel__Override__Microsoft = "Warning"
+$env:LogLevel = "Debug"
 ```
 
-Supported level names include `Verbose`, `Debug`, `Information`, `Warning`, `Error`, and `Fatal`. Environment-variable changes require a process restart. Credentials and authorization headers are never written to logs.
+`Information` is the normal operator level. It shows the concise startup and shutdown messages plus important state changes, such as Palworld or hosted delivery becoming unavailable and recovering. `Debug` and `Trace` add successful polling, delivery, retry, and health-request detail for troubleshooting. `Warning` reports degraded behavior or rejected data that may make the hosted map stale. `Error` and `Critical` are reserved for operations that cannot continue without intervention. `None` disables console logging.
+
+Environment-variable changes require a process restart. Invalid values stop the collector with a configuration error. Credentials, authorization headers, raw upstream responses, private identifiers, player data, and server addresses are never written to logs.
 
 ## Build and test
 

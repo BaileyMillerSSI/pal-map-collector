@@ -18,50 +18,90 @@ internal sealed class SnapshotDeliveryService(
 {
     public const string HttpClientName = "PalmapIngest";
 
+    private bool _deliveryDegraded;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
             var snapshot = await queue.Read(stoppingToken);
             var stableBody = SnapshotContractV1.SerializeToUtf8Bytes(snapshot);
-            var delivered = false;
             for (var attempt = 1; attempt <= settings.CurrentValue.MaximumDeliveryAttempts; attempt++)
             {
                 var result = await Send(stableBody, stoppingToken);
                 if (result.Outcome == DeliveryOutcome.Accepted)
                 {
-                    logger.LogInformation("Delivered snapshot sequence {Sequence}.", snapshot.Sequence);
-                    delivered = true;
+                    LogAccepted(snapshot.Sequence);
                     break;
                 }
 
                 if (result.Outcome == DeliveryOutcome.Terminal)
                 {
                     throw new InvalidOperationException(
-                        "Palmap ingest rejected collector authentication or protocol compatibility.");
+                        "Palmap ingest rejected collector authentication or protocol compatibility; snapshot " +
+                        "delivery cannot continue. Verify the issued credentials and supported protocol version.");
                 }
 
                 if (result.Outcome == DeliveryOutcome.Rejected)
                 {
-                    logger.LogWarning(
-                        "Palmap ingest rejected snapshot sequence {Sequence}; moving to the latest snapshot.",
-                        snapshot.Sequence);
+                    LogRejected(snapshot.Sequence);
                     break;
                 }
 
+                LogRetry(snapshot.Sequence, attempt);
                 if (attempt < settings.CurrentValue.MaximumDeliveryAttempts)
                 {
                     await Task.Delay(RetryDelay(attempt, result.RetryAfter), stoppingToken);
                 }
             }
-
-            if (!delivered)
-            {
-                logger.LogWarning(
-                    "Delivery attempts ended for snapshot sequence {Sequence}; moving to the latest snapshot.",
-                    snapshot.Sequence);
-            }
         }
+    }
+
+    internal void LogAccepted(long sequence)
+    {
+        if (!_deliveryDegraded)
+        {
+            logger.LogDebug("Delivered snapshot sequence {Sequence}.", sequence);
+            return;
+        }
+
+        logger.LogInformation(
+            "Palmap ingest recovered; hosted map updates resumed with the latest available snapshot " +
+            "after a delivery failure.");
+        _deliveryDegraded = false;
+    }
+
+    internal void LogRetry(long sequence, int attempt)
+    {
+        if (!_deliveryDegraded)
+        {
+            _deliveryDegraded = true;
+            logger.LogWarning(
+                "Palmap ingest became unavailable; hosted map updates are delayed. The collector will retry " +
+                "and keep only the latest snapshot; check network and hosted service health if this persists.");
+        }
+
+        logger.LogDebug(
+            "Snapshot sequence {Sequence} delivery attempt {Attempt} of {MaximumAttempts} did not succeed.",
+            sequence,
+            attempt,
+            settings.CurrentValue.MaximumDeliveryAttempts);
+    }
+
+    internal void LogRejected(long sequence)
+    {
+        if (_deliveryDegraded)
+        {
+            logger.LogDebug(
+                "Palmap ingest is still rejecting snapshots; skipped sequence {Sequence}.",
+                sequence);
+            return;
+        }
+
+        _deliveryDegraded = true;
+        logger.LogWarning(
+            "Palmap ingest rejected a snapshot; the hosted map may be stale. Verify collector and hosted API " +
+            "versions and inspect hosted ingest logs; the collector will continue with the latest state.");
     }
 
     internal async Task<DeliveryResult> Send(byte[] stableBody, CancellationToken stoppingToken)

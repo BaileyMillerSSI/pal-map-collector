@@ -26,7 +26,7 @@ internal sealed class PlayerLocationReporterTimedBackgroundService(
         using var palworldApiService = palworldApiServiceFactory.Create();
         var players = await palworldApiService.PlayerList(cancellationToken);
         await collectorApiService.ReportPlayerLocations(players, cancellationToken);
-        logger.LogInformation("Reported {PlayerCount} player locations.", players.Players.Count);
+        logger.LogDebug("Collected {PlayerCount} player locations.", players.Players.Count);
     }
 
     protected override Task ReportFailure(

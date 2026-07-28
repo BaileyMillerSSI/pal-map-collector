@@ -23,6 +23,7 @@ internal sealed class SnapshotCollectorApiService(
     private SourceSlot _playersSlot;
     private SourceSlot _worldSlot;
     private SourceSlot _serverSlot;
+    private readonly HashSet<string> _invalidSections = [];
     private HashSet<string> _stageRefreshPending = [];
     private long _stageRevision;
     private long _sequence;
@@ -155,14 +156,31 @@ internal sealed class SnapshotCollectorApiService(
             try
             {
                 update();
+                if (_invalidSections.Remove(section))
+                {
+                    logger.LogInformation(
+                        "The {Section} source data recovered; fresh sanitized data is available again.",
+                        section);
+                }
             }
             catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException)
             {
                 fail();
-                logger.LogWarning(
-                    "Rejected an invalid {Section} response ({ExceptionType}); retained the last sanitized value.",
-                    section,
-                    exception.GetType().Name);
+                if (_invalidSections.Add(section))
+                {
+                    logger.LogWarning(
+                        "Rejected invalid {Section} source data ({ExceptionType}); the related snapshot section " +
+                        "may be stale. The collector will retry; update Palworld or the collector if this persists.",
+                        section,
+                        exception.GetType().Name);
+                }
+                else
+                {
+                    logger.LogDebug(
+                        "Still rejecting invalid {Section} source data ({ExceptionType}); retained the last sanitized value.",
+                        section,
+                        exception.GetType().Name);
+                }
             }
 
             envelope = CreateEnvelope(timeProvider.GetUtcNow());
