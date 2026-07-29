@@ -1,8 +1,16 @@
-# Palmap Collector
+# Pal-Map Collector
 
-Palmap Collector polls the authenticated REST API exposed by a Palworld dedicated server. It reads player locations, world actor snapshots, and server settings on independent schedules, sanitizes them into the public Palmap snapshot v1 contract, and delivers the latest snapshot to a configured Palmap ingest endpoint.
+Pal-Map Collector polls the authenticated REST API exposed by a Palworld dedicated server. It reads player locations, world actor snapshots, and server settings on independent schedules, sanitizes them into the public Pal-Map snapshot v1 contract, and delivers the latest snapshot to a configured Pal-Map ingest endpoint.
 
 The service targets .NET 10, emits structured console logs, and exposes separate liveness and Palworld-dependent readiness checks. Product data flows outbound only; the health listener should remain private or loopback-bound.
+
+## Brand and technical identifiers
+
+**Pal-Map** is the customer-facing product name. Existing technical identifiers
+retain their compatibility spelling, including `Palmap.*` projects and
+namespaces, the `Palmap.Protocol` package, `PalmapIngest` configuration keys,
+`PALMAP_*` environment variables, schema filenames, and container repository
+names. These identifiers should not be used as visible brand copy.
 
 ## Prerequisites
 
@@ -26,7 +34,7 @@ docker compose ps
 docker compose logs -f collector
 ```
 
-Compose reads the ignored `config/*.env` copies, while only `*.env.example` templates are tracked. The templates deliberately contain local-only demonstration credentials, a documentation-only LAN ingest override, and a public, non-secret privacy-key placeholder. Change the Palworld password, provision a Palmap client pair, and generate a unique privacy key before adapting the sample for a real server. Production collectors use `https://pal-map.com/api/ingest/v1/snapshots` automatically; only local Development testing should retain an endpoint override.
+Compose reads the ignored `config/*.env` copies, while only `*.env.example` templates are tracked. The templates deliberately contain local-only demonstration credentials, a documentation-only LAN ingest override, and a public, non-secret privacy-key placeholder. Change the Palworld password, provision a Pal-Map client pair, and generate a unique privacy key before adapting the sample for a real server. Production collectors use `https://pal-map.com/api/ingest/v1/snapshots` automatically; only local Development testing should retain an endpoint override.
 
 After both services are healthy:
 
@@ -81,7 +89,7 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `PalworldApi:BaseUrl` | `http://localhost:8212` | Palworld REST origin, including TCP port 8212 |
 | `PalworldApi:Admin:Username` | `admin` | Palworld's REST Basic-auth username |
 | `PalworldApi:Admin:Password` | none | REST admin password; required at startup |
-| `PalmapIngest:Endpoint` | `https://pal-map.com/api/ingest/v1/snapshots` | Hosted Palmap snapshot v1 ingest URL; override only for explicit local Development testing |
+| `PalmapIngest:Endpoint` | `https://pal-map.com/api/ingest/v1/snapshots` | Hosted Pal-Map snapshot v1 ingest URL; override only for explicit local Development testing |
 | `PalmapIngest:ClientId` | none | Issued 20-to-64-character Server/Client ID: `pmc_` plus 16 to 60 base64url characters |
 | `PalmapIngest:ClientSecret` | none | Issued base64url client secret used for HTTP Basic authentication |
 | `PalmapIngest:PrivacyKey` | none | Unique 32-byte key encoded as base64; used only to derive opaque identifiers |
@@ -96,7 +104,7 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `Collector:FailureRetryIntervalMs` | `5000` | Retry period after an unavailable server or failed report |
 | `Collector:PalworldHealthCacheDurationMs` | `5000` | Shared health-probe cache duration |
 
-Endpoint overrides must be absolute HTTP or HTTPS URLs and cannot contain user information, a query, or a fragment. Any value other than the hosted default requires both the `Development` environment and `PalmapIngest:AllowInsecureHttp=true`, even when the override itself uses HTTPS. All intervals must be between 1 and `2147483647` milliseconds. The Palworld password, Palmap client secret, and privacy key have no real checked-in defaults; missing or malformed configuration stops the process during startup with an options-validation error.
+Endpoint overrides must be absolute HTTP or HTTPS URLs and cannot contain user information, a query, or a fragment. Any value other than the hosted default requires both the `Development` environment and `PalmapIngest:AllowInsecureHttp=true`, even when the override itself uses HTTPS. All intervals must be between 1 and `2147483647` milliseconds. The Palworld password, Pal-Map client secret, and privacy key have no real checked-in defaults; missing or malformed configuration stops the process during startup with an options-validation error.
 
 Reporter loops update retained sanitized state without waiting for network delivery. The delivery worker sends one stable serialized envelope per attempt sequence, honors bounded `Retry-After` values, and retains only the latest pending snapshot during outages. Authentication and protocol-compatibility failures stop the collector; rejected payloads and exhausted transient retries move on to the latest available state. Raw player, account, platform, network, and Palworld error data are neither included in the public contract nor written to delivery logs.
 

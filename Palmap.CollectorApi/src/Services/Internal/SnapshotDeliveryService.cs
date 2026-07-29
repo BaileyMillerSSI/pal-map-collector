@@ -38,7 +38,7 @@ internal sealed class SnapshotDeliveryService(
                 if (result.Outcome == DeliveryOutcome.Terminal)
                 {
                     throw new InvalidOperationException(
-                        "Palmap ingest rejected collector authentication or protocol compatibility; snapshot " +
+                        "Pal-Map ingest rejected collector authentication or protocol compatibility; snapshot " +
                         "delivery cannot continue. Verify the issued credentials and supported protocol version.");
                 }
 
@@ -66,7 +66,7 @@ internal sealed class SnapshotDeliveryService(
         }
 
         logger.LogInformation(
-            "Palmap ingest recovered; hosted map updates resumed with the latest available snapshot " +
+            "Pal-Map ingest recovered; hosted map updates resumed with the latest available snapshot " +
             "after a delivery failure.");
         _deliveryDegraded = false;
     }
@@ -77,7 +77,7 @@ internal sealed class SnapshotDeliveryService(
         {
             _deliveryDegraded = true;
             logger.LogWarning(
-                "Palmap ingest became unavailable; hosted map updates are delayed. The collector will retry " +
+                "Pal-Map ingest became unavailable; hosted map updates are delayed. The collector will retry " +
                 "and keep only the latest snapshot; check network and hosted service health if this persists.");
         }
 
@@ -93,14 +93,14 @@ internal sealed class SnapshotDeliveryService(
         if (_deliveryDegraded)
         {
             logger.LogDebug(
-                "Palmap ingest is still rejecting snapshots; skipped sequence {Sequence}.",
+                "Pal-Map ingest is still rejecting snapshots; skipped sequence {Sequence}.",
                 sequence);
             return;
         }
 
         _deliveryDegraded = true;
         logger.LogWarning(
-            "Palmap ingest rejected a snapshot; the hosted map may be stale. Verify collector and hosted API " +
+            "Pal-Map ingest rejected a snapshot; the hosted map may be stale. Verify collector and hosted API " +
             "versions and inspect hosted ingest logs; the collector will continue with the latest state.");
     }
 

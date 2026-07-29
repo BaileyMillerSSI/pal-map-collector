@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Palmap.Collector;
 using Palmap.Collector.Health;
 using Palmap.Collector.Logging;
 using Palmap.Collector.Services;
@@ -10,6 +11,21 @@ namespace Palmap.UnitTests;
 
 public sealed class LoggingTests
 {
+    public static TheoryData<string> CollectorLifecycleMessages => new()
+    {
+        Program.StartedMessage,
+        Program.StoppingMessage,
+        Program.FatalMessage
+    };
+
+    [Theory]
+    [MemberData(nameof(CollectorLifecycleMessages))]
+    public void CollectorLifecycleMessagesUseTheCustomerFacingBrand(string message)
+    {
+        Assert.Contains("Pal-Map", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Palmap", message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("Trace", LogEventLevel.Verbose, false)]
     [InlineData("Debug", LogEventLevel.Debug, false)]
@@ -140,6 +156,7 @@ public sealed class LoggingTests
         Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Information);
         Assert.Equal(2, logger.Entries.Count(entry => entry.Level == LogLevel.Debug));
         Assert.DoesNotContain(logger.Entries, entry => entry.Message.Contains("example.test", StringComparison.Ordinal));
+        AssertBrandedIngestMessages(logger.Entries);
     }
 
     [Fact]
@@ -153,6 +170,20 @@ public sealed class LoggingTests
 
         Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Warning);
         Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Debug);
+        AssertBrandedIngestMessages(logger.Entries);
+    }
+
+    private static void AssertBrandedIngestMessages(IEnumerable<RecordedLogEntry> entries)
+    {
+        var branded = entries
+            .Where(entry => entry.Message.Contains("ingest", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Assert.NotEmpty(branded);
+        Assert.All(branded, entry =>
+        {
+            Assert.Contains("Pal-Map", entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("Palmap", entry.Message, StringComparison.Ordinal);
+        });
     }
 
     private static SnapshotDeliveryService DeliveryService(ILogger<SnapshotDeliveryService> logger) => new(

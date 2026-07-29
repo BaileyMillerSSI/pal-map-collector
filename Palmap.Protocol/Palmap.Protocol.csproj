@@ -6,7 +6,7 @@
     <PackageId>Palmap.Protocol</PackageId>
     <Version>1.0.0-rc.2</Version>
     <Authors>Bailey Miller</Authors>
-    <Description>Versioned, privacy-safe wire contracts for Palmap collectors and ingest services.</Description>
+    <Description>Versioned, privacy-safe wire contracts for Pal-Map collectors and ingest services.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>palworld;palmap;protocol</PackageTags>

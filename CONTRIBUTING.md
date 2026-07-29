@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping improve Palmap Collector. Please open an issue before a
+Thank you for helping improve Pal-Map Collector. Please open an issue before a
 large change so that protocol compatibility, privacy, and operator impact can
 be agreed before implementation.
 

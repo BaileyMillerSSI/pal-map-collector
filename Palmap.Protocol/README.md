@@ -1,6 +1,6 @@
 # Palmap.Protocol
 
-`Palmap.Protocol` contains the public, versioned JSON contract shared by Palmap
+`Palmap.Protocol` contains the public, versioned JSON contract shared by Pal-Map
 collectors and compatible ingest services. It contains DTOs, strict serializer
 settings, validation, JSON Schema, and synthetic fixtures only.
 
