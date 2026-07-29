@@ -1,4 +1,4 @@
-# Releasing Palmap Collector
+# Releasing Pal-Map Collector
 
 The collector image is built for both `linux/amd64` and `linux/arm64`. Every pull request and every push to `main` builds and runs the liveness endpoint under both architectures; the ARM64 smoke uses QEMU on the GitHub-hosted AMD64 runner.
 

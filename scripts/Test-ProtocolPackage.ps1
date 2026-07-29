@@ -39,6 +39,24 @@ try {
         }
     }
 
+    $manifest = @($archive.Entries | Where-Object { $_.FullName.EndsWith(".nuspec") })
+    $manifestReader = [System.IO.StreamReader]::new($manifest[0].Open())
+    try {
+        [xml] $manifestXml = $manifestReader.ReadToEnd()
+    }
+    finally {
+        $manifestReader.Dispose()
+    }
+
+    $description = $manifestXml.SelectSingleNode(
+        "/*[local-name()='package']/*[local-name()='metadata']/*[local-name()='description']")
+
+    if ($null -eq $description -or
+        $description.InnerText -notmatch '\bPal-Map\b' -or
+        $description.InnerText -match '\bPalmap\b') {
+        throw "Protocol package description must use the Pal-Map customer-facing brand."
+    }
+
     $forbidden = @($entries | Where-Object {
         $_ -match '(^|/)(\.env($|\.)|.*\.(pfx|p12|snk|key|pem))$'
     })

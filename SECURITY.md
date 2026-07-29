@@ -17,7 +17,7 @@ the release-candidate period, only the newest release candidate is supported.
 ## Security boundary
 
 The collector reads Palworld's administrative REST API only on the operator's
-private network and sends an allowlisted snapshot outbound to Palmap. Never
+private network and sends an allowlisted snapshot outbound to Pal-Map. Never
 publish the Palworld REST port. Production ingest must use HTTPS. Palworld
 credentials, raw account/platform identifiers, IP addresses, and upstream
 error bodies must never be transmitted or logged.

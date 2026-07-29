@@ -12,6 +12,14 @@ namespace Palmap.Collector;
 
 internal static class Program
 {
+    internal const string StartedMessage =
+        "Pal-Map Collector started at {LogLevel}; Palworld polling and snapshot delivery are active.";
+    internal const string StoppingMessage =
+        "Pal-Map Collector is shutting down; polling and delivery are stopping.";
+    internal const string FatalMessage =
+        "Pal-Map Collector stopped and snapshots will not be delivered ({ExceptionType}). " +
+        "Review the configuration and preceding log messages before restarting.";
+
     public static async Task Main(string[] args)
     {
         Log.Logger = new LoggerConfiguration()
@@ -60,20 +68,15 @@ internal static class Program
                 Predicate = registration => registration.Tags.Contains("ready")
             });
             app.Lifetime.ApplicationStarted.Register(() =>
-                Log.Information(
-                    "Palmap Collector started at {LogLevel}; Palworld polling and snapshot delivery are active.",
-                    logLevel.Name));
+                Log.Information(StartedMessage, logLevel.Name));
             app.Lifetime.ApplicationStopping.Register(() =>
-                Log.Information("Palmap Collector is shutting down; polling and delivery are stopping."));
+                Log.Information(StoppingMessage));
 
             await app.RunAsync();
         }
         catch (Exception exception)
         {
-            Log.Fatal(
-                "Palmap Collector stopped and snapshots will not be delivered ({ExceptionType}). " +
-                "Review the configuration and preceding log messages before restarting.",
-                exception.GetType().Name);
+            Log.Fatal(FatalMessage, exception.GetType().Name);
             throw;
         }
         finally
