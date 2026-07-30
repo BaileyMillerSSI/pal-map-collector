@@ -3,6 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using System.Text;
+using Palmap.Collector;
+using Palmap.Collector.Configuration;
+using Palmap.Collector.Services;
+using Palmap.Collector.Metrics;
 using Palmap.CollectorApi;
 using Palmap.CollectorApi.Configuration;
 using Palmap.PalworldApi;
@@ -77,5 +81,53 @@ public sealed class OptionsAndRegistrationTests
 
         Assert.Throws<OptionsValidationException>(() =>
             provider.GetRequiredService<IOptions<CollectorSettings>>().Value);
+    }
+
+    [Theory]
+    [InlineData("Port", "0")]
+    [InlineData("Port", "65536")]
+    [InlineData("SampleIntervalMs", "0")]
+    public void PrometheusExporterOptionsMustBeValid(string settingName, string value)
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration[$"PrometheusExporter:{settingName}"] = value;
+        builder.AddPrometheusExporter();
+        using var provider = builder.Services.BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(() =>
+            provider.GetRequiredService<IOptions<PrometheusExporterSettings>>().Value);
+    }
+
+    [Fact]
+    public void DisabledPrometheusExporterDoesNotRegisterSampler()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["PrometheusExporter:Enabled"] = "false";
+        builder.AddPrometheusExporter();
+
+        Assert.DoesNotContain(
+            builder.Services,
+            descriptor => descriptor.ImplementationType == typeof(PalworldMetricsSampler));
+        Assert.DoesNotContain(
+            builder.Services,
+            descriptor => descriptor.ServiceType == typeof(PalworldMetricsCache));
+    }
+
+    [Fact]
+    public void EnabledPrometheusExporterRegistersSamplerAndCache()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["PrometheusExporter:Enabled"] = "true";
+        builder.Configuration["PrometheusExporter:Port"] = "19090";
+        builder.AddPrometheusExporter();
+
+        Assert.Contains(
+            builder.Services,
+            descriptor => descriptor.ImplementationType == typeof(PalworldMetricsSampler));
+        Assert.Contains(
+            builder.Services,
+            descriptor => descriptor.ServiceType == typeof(PalworldMetricsCache));
+        Assert.NotNull(builder.Services.BuildServiceProvider()
+            .GetRequiredService<IOptions<PrometheusExporterSettings>>().Value);
     }
 }

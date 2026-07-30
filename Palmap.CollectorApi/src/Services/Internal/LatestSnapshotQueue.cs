@@ -13,6 +13,8 @@ internal sealed class LatestSnapshotQueue
             SingleWriter = false
         });
 
+    public int Depth => _channel.Reader.Count;
+
     public void Publish(SnapshotEnvelopeV1 snapshot) =>
         _channel.Writer.TryWrite(snapshot);
 

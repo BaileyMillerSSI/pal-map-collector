@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Palmap.Collector.Health;
 using Palmap.Collector.Services;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services;
 using Palmap.CollectorApi.Services.Internal;
 using Palmap.PalworldApi.Models;
@@ -26,6 +27,7 @@ public sealed class ReporterAndHealthTests
             options,
             health,
             delay,
+            new CollectorMetrics(TimeProvider.System),
             NullLogger<PlayerLocationReporterTimedBackgroundService>.Instance)
             .ReportOnce(CancellationToken.None);
 
@@ -36,6 +38,7 @@ public sealed class ReporterAndHealthTests
             options,
             health,
             delay,
+            new CollectorMetrics(TimeProvider.System),
             NullLogger<GameDataReportTimedBackgroundService>.Instance)
             .ReportOnce(CancellationToken.None);
 
@@ -45,6 +48,7 @@ public sealed class ReporterAndHealthTests
             options,
             health,
             delay,
+            new CollectorMetrics(TimeProvider.System),
             NullLogger<GameServerSettingsReportTimedBackgroundService>.Instance)
             .ReportOnce(CancellationToken.None);
 
@@ -74,6 +78,7 @@ public sealed class ReporterAndHealthTests
                 options,
                 health,
                 playerDelay,
+                new CollectorMetrics(TimeProvider.System),
                 NullLogger<PlayerLocationReporterTimedBackgroundService>.Instance),
             playerDelay,
             11);
@@ -87,6 +92,7 @@ public sealed class ReporterAndHealthTests
                 options,
                 health,
                 gameDataDelay,
+                new CollectorMetrics(TimeProvider.System),
                 NullLogger<GameDataReportTimedBackgroundService>.Instance),
             gameDataDelay,
             22);
@@ -99,6 +105,7 @@ public sealed class ReporterAndHealthTests
                 options,
                 health,
                 settingsDelay,
+                new CollectorMetrics(TimeProvider.System),
                 NullLogger<GameServerSettingsReportTimedBackgroundService>.Instance),
             settingsDelay,
             33);
@@ -118,6 +125,7 @@ public sealed class ReporterAndHealthTests
             new StaticOptionsMonitor<CollectorSettings>(new()),
             new StubPalworldApiHealthService(),
             delay,
+            new CollectorMetrics(TimeProvider.System),
             NullLogger<GameDataReportTimedBackgroundService>.Instance);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
@@ -147,6 +155,7 @@ public sealed class ReporterAndHealthTests
             new StaticOptionsMonitor<CollectorSettings>(new()),
             new StubPalworldApiHealthService(),
             new RecordingCollectorDelay(),
+            new CollectorMetrics(TimeProvider.System),
             NullLogger<GameDataReportTimedBackgroundService>.Instance);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
@@ -181,6 +190,7 @@ public sealed class ReporterAndHealthTests
             options,
             health,
             delay,
+            new CollectorMetrics(TimeProvider.System),
             NullLogger<PlayerLocationReporterTimedBackgroundService>.Instance);
 
         await AssertScheduled(worker, delay, 77);
@@ -203,6 +213,7 @@ public sealed class ReporterAndHealthTests
             new StaticOptionsMonitor<CollectorSettings>(new()),
             health,
             new RecordingCollectorDelay(),
+            new CollectorMetrics(TimeProvider.System),
             NullLogger<PlayerLocationReporterTimedBackgroundService>.Instance);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 

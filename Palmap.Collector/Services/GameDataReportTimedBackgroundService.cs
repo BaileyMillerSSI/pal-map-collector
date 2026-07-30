@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Palmap.Collector.Health;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services;
 using Palmap.CollectorApi.Services.Internal;
 using Palmap.PalworldApi.Services;
@@ -14,8 +15,9 @@ internal sealed class GameDataReportTimedBackgroundService(
     IOptionsMonitor<CollectorSettings> collectorSettings,
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
+    ICollectorMetricService collectorMetrics,
     ILogger<GameDataReportTimedBackgroundService> logger)
-    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, logger)
+    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, collectorMetrics, logger)
 {
     private long _completedRevision = -1;
 
@@ -24,6 +26,8 @@ internal sealed class GameDataReportTimedBackgroundService(
     protected override int FailureRetryIntervalMs => collectorSettings.CurrentValue.FailureRetryIntervalMs;
 
     protected override string ReportDescription => "game data";
+
+    protected override string MetricsSource => "world";
 
     internal override async Task ReportOnce(CancellationToken cancellationToken)
     {
@@ -56,7 +60,6 @@ internal sealed class GameDataReportTimedBackgroundService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // The other wait completed first, or the reporter is stopping.
         }
     }
 

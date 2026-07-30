@@ -7,4 +7,6 @@ internal interface IPalworldApiHealthService
     Task WaitUntilHealthy(CancellationToken cancellationToken = default);
 
     void MarkUnhealthy();
+
+    bool TryGetLastKnownHealthy(out bool isHealthy);
 }

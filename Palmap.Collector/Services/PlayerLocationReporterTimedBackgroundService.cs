@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Palmap.Collector.Health;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services;
 using Palmap.PalworldApi.Services;
 
@@ -12,14 +13,17 @@ internal sealed class PlayerLocationReporterTimedBackgroundService(
     IOptionsMonitor<CollectorSettings> collectorSettings,
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
+    ICollectorMetricService collectorMetrics,
     ILogger<PlayerLocationReporterTimedBackgroundService> logger)
-    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, logger)
+    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, collectorMetrics, logger)
 {
     protected override int ReportIntervalMs => collectorSettings.CurrentValue.PlayerLocationUpdateIntervalMs;
 
     protected override int FailureRetryIntervalMs => collectorSettings.CurrentValue.FailureRetryIntervalMs;
 
     protected override string ReportDescription => "player locations";
+
+    protected override string MetricsSource => "players";
 
     internal override async Task ReportOnce(CancellationToken cancellationToken)
     {

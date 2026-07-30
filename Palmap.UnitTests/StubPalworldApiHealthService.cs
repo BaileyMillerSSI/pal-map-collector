@@ -29,4 +29,10 @@ internal sealed class StubPalworldApiHealthService : IPalworldApiHealthService
         IsHealthyResult = false;
         MarkUnhealthyCallCount++;
     }
+
+    public bool TryGetLastKnownHealthy(out bool isHealthy)
+    {
+        isHealthy = IsHealthyResult;
+        return true;
+    }
 }
