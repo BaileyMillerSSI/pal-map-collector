@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using Palmap.Collector.Services;
 using Palmap.CollectorApi;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services;
 using Palmap.CollectorApi.Services.Internal;
 using Palmap.PalworldApi.Models;
@@ -488,6 +489,7 @@ public sealed class CollectorIngestTests
         new HttpClientFactory(client),
         new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()),
         TimeProvider.System,
+        new CollectorMetrics(TimeProvider.System),
         NullLogger<SnapshotDeliveryService>.Instance);
 
     private static void AddValidIngestConfiguration(IConfiguration configuration, string? endpoint = null)

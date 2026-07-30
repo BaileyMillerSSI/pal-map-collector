@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Palmap.Collector.Health;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services;
 using Palmap.PalworldApi.Services;
 
@@ -12,9 +13,9 @@ internal sealed class PlayerLocationReporterTimedBackgroundService(
     IOptionsMonitor<CollectorSettings> collectorSettings,
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
-    TimeProvider timeProvider,
+    ICollectorMetricService collectorMetrics,
     ILogger<PlayerLocationReporterTimedBackgroundService> logger)
-    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, timeProvider, logger)
+    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, collectorMetrics, logger)
 {
     protected override int ReportIntervalMs => collectorSettings.CurrentValue.PlayerLocationUpdateIntervalMs;
 

@@ -17,7 +17,7 @@ internal sealed class PalworldMetricsSampler(
     IOptionsMonitor<CollectorSettings> collectorSettings,
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
-    TimeProvider timeProvider,
+    ICollectorMetricService collectorMetrics,
     ILogger<PalworldMetricsSampler> logger) : BackgroundService
 {
     public const string SourceName = "metrics";
@@ -49,7 +49,7 @@ internal sealed class PalworldMetricsSampler(
                         exception.GetType().Name);
                 }
 
-                CollectorMetrics.RecordReporterFailure(
+                collectorMetrics.RecordReporterFailure(
                     SourceName,
                     ClassifyFailureReason(exception));
 
@@ -74,7 +74,7 @@ internal sealed class PalworldMetricsSampler(
         using var palworldApiService = palworldApiServiceFactory.Create();
         var metrics = await palworldApiService.ServerMetrics(cancellationToken);
         metricsCache.Update(metrics);
-        CollectorMetrics.RecordReporterSuccess(SourceName, timeProvider);
+        collectorMetrics.RecordReporterSuccess(SourceName);
         logger.LogDebug(
             "Collected server metrics ({PlayerCount}/{MaxPlayerCount} players, {ServerFps} fps).",
             metrics.CurrentPlayerCount,

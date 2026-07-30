@@ -19,16 +19,14 @@ internal static class PrometheusExporterExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        var enabled = builder.Configuration.GetSection(PrometheusExporterSettings.SectionName)
-            .GetValue(nameof(PrometheusExporterSettings.Enabled), false);
-        if (!enabled)
+        if (!builder.Configuration.GetSection(PrometheusExporterSettings.SectionName)
+            .GetValue(nameof(PrometheusExporterSettings.Enabled), false))
         {
             return builder;
         }
 
-        var section = builder.Configuration.GetSection(PrometheusExporterSettings.SectionName);
-        var host = section[nameof(PrometheusExporterSettings.Host)] ?? "+";
-        var port = section.GetValue(nameof(PrometheusExporterSettings.Port), 9090);
+        var promoSettings = new PrometheusExporterSettings();
+        builder.Configuration.GetSection(PrometheusExporterSettings.SectionName).Bind(promoSettings);
 
         builder.Services.AddSingleton<PalworldMetricsCache>();
         builder.Services.AddSingleton<CollectorObservableMetrics>();
@@ -40,8 +38,8 @@ internal static class PrometheusExporterExtensions
                 metrics.AddMeter(CollectorMetrics.MeterName);
                 metrics.AddPrometheusHttpListener(options =>
                 {
-                    options.Host = host;
-                    options.Port = port;
+                    options.Host = promoSettings.Host;
+                    options.Port = promoSettings.Port;
                 });
             });
         return builder;

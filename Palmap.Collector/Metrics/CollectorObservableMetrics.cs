@@ -11,7 +11,8 @@ internal sealed class CollectorObservableMetrics(
     PalworldMetricsCache metricsCache,
     ICollectorMetricsSnapshotSource snapshotSource,
     IPalworldApiHealthService healthService,
-    LatestSnapshotQueue snapshotQueue)
+    LatestSnapshotQueue snapshotQueue,
+    ICollectorMetricService collectorMetrics)
 {
     private int _registered;
 
@@ -22,7 +23,7 @@ internal sealed class CollectorObservableMetrics(
             return;
         }
 
-        var meter = CollectorMetrics.Meter;
+        var meter = collectorMetrics.Meter;
         meter.CreateObservableGauge("palworld_server_fps", ObserveServerFps);
         meter.CreateObservableGauge(
             "palworld_server_frametime_milliseconds",
@@ -63,7 +64,7 @@ internal sealed class CollectorObservableMetrics(
         meter.CreateObservableGauge("palmap_palworld_api_up", ObservePalworldApiUp);
         meter.CreateObservableGauge(
             "palmap_reporter_last_success_timestamp_seconds",
-            CollectorMetrics.ObserveReporterLastSuccessTimestamps,
+            collectorMetrics.ObserveReporterLastSuccessTimestamps,
             unit: "s");
         meter.CreateObservableGauge("palmap_ingest_queue_depth", () => snapshotQueue.Depth);
     }
@@ -126,35 +127,31 @@ internal sealed class CollectorObservableMetrics(
 
     private IEnumerable<Measurement<double>> ObserveWorldFps()
     {
-        var world = snapshotSource.GetMetricsSnapshot().World;
-        if (world is not null)
+        if (snapshotSource.GetMetricsSnapshot().World is { Stats: { } stats })
         {
-            yield return new(world.Stats.Fps);
+            yield return new(stats.Fps);
         }
     }
 
     private IEnumerable<Measurement<double>> ObserveWorldAverageFps()
     {
-        var world = snapshotSource.GetMetricsSnapshot().World;
-        if (world is not null)
+        if (snapshotSource.GetMetricsSnapshot().World is { Stats: { } stats })
         {
-            yield return new(world.Stats.AverageFps);
+            yield return new(stats.AverageFps);
         }
     }
 
     private IEnumerable<Measurement<long>> ObserveWorldInGameDays()
     {
-        var days = snapshotSource.GetMetricsSnapshot().World?.Stats.InGameDays;
-        if (days is not null)
+        if (snapshotSource.GetMetricsSnapshot().World is { Stats.InGameDays: { } days })
         {
-            yield return new(days.Value);
+            yield return new(days);
         }
     }
 
     private IEnumerable<Measurement<long>> ObserveActors()
     {
-        var counts = snapshotSource.GetMetricsSnapshot().World?.Stats.ActorCounts;
-        if (counts is null)
+        if (snapshotSource.GetMetricsSnapshot().World is not { Stats.ActorCounts: { } counts })
         {
             yield break;
         }
@@ -170,8 +167,7 @@ internal sealed class CollectorObservableMetrics(
 
     private IEnumerable<Measurement<long>> ObserveActorsTotal()
     {
-        var counts = snapshotSource.GetMetricsSnapshot().World?.Stats.ActorCounts;
-        if (counts is null)
+        if (snapshotSource.GetMetricsSnapshot().World is not { Stats.ActorCounts: { } counts })
         {
             yield break;
         }
@@ -183,17 +179,15 @@ internal sealed class CollectorObservableMetrics(
 
     private IEnumerable<Measurement<long>> ObserveGuildsTotal()
     {
-        var world = snapshotSource.GetMetricsSnapshot().World;
-        if (world is not null)
+        if (snapshotSource.GetMetricsSnapshot().World is { Guilds: { } guilds })
         {
-            yield return new(world.Guilds.Count);
+            yield return new(guilds.Count);
         }
     }
 
     private IEnumerable<Measurement<double>> ObservePlayerPingAvg()
     {
-        var players = snapshotSource.GetMetricsSnapshot().Players;
-        if (players is { Count: > 0 })
+        if (snapshotSource.GetMetricsSnapshot().Players is { Count: > 0 } players)
         {
             yield return new(players.Average(player => player.PingMs));
         }
@@ -201,8 +195,7 @@ internal sealed class CollectorObservableMetrics(
 
     private IEnumerable<Measurement<long>> ObservePlayerPingMax()
     {
-        var players = snapshotSource.GetMetricsSnapshot().Players;
-        if (players is { Count: > 0 })
+        if (snapshotSource.GetMetricsSnapshot().Players is { Count: > 0 } players)
         {
             yield return new(players.Max(player => player.PingMs));
         }
@@ -210,8 +203,7 @@ internal sealed class CollectorObservableMetrics(
 
     private IEnumerable<Measurement<double>> ObservePlayerLevelAvg()
     {
-        var players = snapshotSource.GetMetricsSnapshot().Players;
-        if (players is { Count: > 0 })
+        if (snapshotSource.GetMetricsSnapshot().Players is { Count: > 0 } players)
         {
             yield return new(players.Average(player => player.Level));
         }
@@ -219,8 +211,7 @@ internal sealed class CollectorObservableMetrics(
 
     private IEnumerable<Measurement<long>> ObservePlayerLevelMax()
     {
-        var players = snapshotSource.GetMetricsSnapshot().Players;
-        if (players is { Count: > 0 })
+        if (snapshotSource.GetMetricsSnapshot().Players is { Count: > 0 } players)
         {
             yield return new(players.Max(player => player.Level));
         }
@@ -228,8 +219,7 @@ internal sealed class CollectorObservableMetrics(
 
     private IEnumerable<Measurement<long>> ObservePlayerBuildingsTotal()
     {
-        var players = snapshotSource.GetMetricsSnapshot().Players;
-        if (players is null)
+        if (snapshotSource.GetMetricsSnapshot().Players is not { } players)
         {
             yield break;
         }
@@ -239,8 +229,7 @@ internal sealed class CollectorObservableMetrics(
 
     private IEnumerable<Measurement<long>> ObservePlayersByLocation()
     {
-        var players = snapshotSource.GetMetricsSnapshot().Players;
-        if (players is null)
+        if (snapshotSource.GetMetricsSnapshot().Players is not { } players)
         {
             yield break;
         }

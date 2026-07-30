@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Palmap.Collector.Health;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services;
 using Palmap.CollectorApi.Services.Internal;
 using Palmap.PalworldApi.Services;
@@ -14,9 +15,9 @@ internal sealed class GameDataReportTimedBackgroundService(
     IOptionsMonitor<CollectorSettings> collectorSettings,
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
-    TimeProvider timeProvider,
+    ICollectorMetricService collectorMetrics,
     ILogger<GameDataReportTimedBackgroundService> logger)
-    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, timeProvider, logger)
+    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, collectorMetrics, logger)
 {
     private long _completedRevision = -1;
 

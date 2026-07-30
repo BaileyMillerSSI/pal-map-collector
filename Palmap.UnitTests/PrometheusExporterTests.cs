@@ -173,6 +173,7 @@ public sealed class PrometheusExporterTests
     [InlineData(HttpStatusCode.Unauthorized, "terminal")]
     public async Task DeliveryRecordsOutcomeCounters(HttpStatusCode statusCode, string expectedOutcome)
     {
+        var collectorMetrics = new CollectorMetrics(TimeProvider.System);
         var outcomes = new List<string>();
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, meterListener) =>
@@ -198,9 +199,10 @@ public sealed class PrometheusExporterTests
         using var client = new HttpClient(handler);
         var service = new SnapshotDeliveryService(
             new LatestSnapshotQueue(),
-            new HttpClientFactory(client),
+            new NoOpHttpClientFactory(client),
             new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()),
             TimeProvider.System,
+            collectorMetrics,
             NullLogger<SnapshotDeliveryService>.Instance);
 
         await service.Send("{}"u8.ToArray(), CancellationToken.None);
@@ -229,7 +231,7 @@ public sealed class PrometheusExporterTests
             }),
             health ?? new StubPalworldApiHealthService(),
             delay,
-            TimeProvider.System,
+            new CollectorMetrics(TimeProvider.System),
             NullLogger<PalworldMetricsSampler>.Instance);
 
     private static (SnapshotCollectorApiService Service, LatestSnapshotQueue Queue, GameDataRefreshSignal Signal)
@@ -254,7 +256,7 @@ public sealed class PrometheusExporterTests
         PrivacyKey = Convert.ToBase64String(Enumerable.Range(0, 32).Select(value => (byte)value).ToArray())
     };
 
-    private sealed class HttpClientFactory(HttpClient client) : IHttpClientFactory
+    private sealed class NoOpHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
     }

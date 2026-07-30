@@ -2,57 +2,64 @@ using System.Diagnostics.Metrics;
 
 namespace Palmap.CollectorApi.Metrics;
 
-internal static class CollectorMetrics
+internal sealed class CollectorMetrics : ICollectorMetricService
 {
     public const string MeterName = "Palmap.Collector";
 
-    public static readonly Meter Meter = new(MeterName);
+    private readonly TimeProvider _timeProvider;
+    private readonly object _lastSuccessGate = new();
+    private readonly Dictionary<string, long> _lastSuccessUnixSeconds = new(StringComparer.Ordinal);
+    private readonly Counter<long> _reporterSuccessTotal;
+    private readonly Counter<long> _reporterFailureTotal;
+    private readonly Counter<long> _ingestDeliveryTotal;
+    private readonly Histogram<double> _ingestDeliveryDurationSeconds;
 
-    public static readonly Counter<long> ReporterSuccessTotal =
-        Meter.CreateCounter<long>("palmap_reporter_success_total");
-
-    public static readonly Counter<long> ReporterFailureTotal =
-        Meter.CreateCounter<long>("palmap_reporter_failure_total");
-
-    public static readonly Counter<long> IngestDeliveryTotal =
-        Meter.CreateCounter<long>("palmap_ingest_delivery_total");
-
-    public static readonly Histogram<double> IngestDeliveryDurationSeconds =
-        Meter.CreateHistogram<double>("palmap_ingest_delivery_duration_seconds", unit: "s");
-
-    private static readonly object LastSuccessGate = new();
-    private static readonly Dictionary<string, long> LastSuccessUnixSeconds = new(StringComparer.Ordinal);
-
-    public static void RecordReporterSuccess(string source, TimeProvider timeProvider)
+    public CollectorMetrics(TimeProvider timeProvider)
     {
-        ReporterSuccessTotal.Add(1, new KeyValuePair<string, object?>("source", source));
-        var unix = timeProvider.GetUtcNow().ToUnixTimeSeconds();
-        lock (LastSuccessGate)
+        _timeProvider = timeProvider;
+        Meter = new Meter(MeterName);
+        _reporterSuccessTotal = Meter.CreateCounter<long>("palmap_reporter_success_total");
+        _reporterFailureTotal = Meter.CreateCounter<long>("palmap_reporter_failure_total");
+        _ingestDeliveryTotal = Meter.CreateCounter<long>("palmap_ingest_delivery_total");
+        _ingestDeliveryDurationSeconds = Meter.CreateHistogram<double>(
+            "palmap_ingest_delivery_duration_seconds",
+            unit: "s");
+    }
+
+    public Meter Meter { get; }
+
+    public void RecordReporterSuccess(string source)
+    {
+        _reporterSuccessTotal.Add(1, new KeyValuePair<string, object?>("source", source));
+        var unix = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
+        lock (_lastSuccessGate)
         {
-            LastSuccessUnixSeconds[source] = unix;
+            _lastSuccessUnixSeconds[source] = unix;
         }
     }
 
-    public static void RecordReporterFailure(string source, string reason)
+    public void RecordReporterFailure(string source, string reason)
     {
-        ReporterFailureTotal.Add(
+        _reporterFailureTotal.Add(
             1,
             new KeyValuePair<string, object?>("source", source),
             new KeyValuePair<string, object?>("reason", reason));
     }
 
-    public static void RecordIngestDelivery(string outcome, double durationSeconds)
+    public void RecordIngestDelivery(string outcome, double durationSeconds)
     {
-        IngestDeliveryTotal.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
-        IngestDeliveryDurationSeconds.Record(durationSeconds, new KeyValuePair<string, object?>("outcome", outcome));
+        _ingestDeliveryTotal.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
+        _ingestDeliveryDurationSeconds.Record(
+            durationSeconds,
+            new KeyValuePair<string, object?>("outcome", outcome));
     }
 
-    public static IEnumerable<Measurement<long>> ObserveReporterLastSuccessTimestamps()
+    public IEnumerable<Measurement<long>> ObserveReporterLastSuccessTimestamps()
     {
         KeyValuePair<string, long>[] snapshot;
-        lock (LastSuccessGate)
+        lock (_lastSuccessGate)
         {
-            snapshot = LastSuccessUnixSeconds.ToArray();
+            snapshot = _lastSuccessUnixSeconds.ToArray();
         }
 
         foreach (var (source, unix) in snapshot)

@@ -8,7 +8,7 @@ namespace Palmap.Collector.Services;
 internal abstract class TimedReporterBackgroundService(
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
-    TimeProvider timeProvider,
+    ICollectorMetricService collectorMetrics,
     ILogger logger) : BackgroundService
 {
     private int _consecutiveSourceFailures;
@@ -38,7 +38,7 @@ internal abstract class TimedReporterBackgroundService(
                 await palworldHealthService.WaitUntilHealthy(stoppingToken);
                 await ReportOnce(stoppingToken);
                 LogSourceRecovery();
-                CollectorMetrics.RecordReporterSuccess(MetricsSource, timeProvider);
+                collectorMetrics.RecordReporterSuccess(MetricsSource);
                 await WaitAfterSuccessfulReport(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -62,7 +62,7 @@ internal abstract class TimedReporterBackgroundService(
                     LogSourceFailure(exception);
                 }
 
-                CollectorMetrics.RecordReporterFailure(
+                collectorMetrics.RecordReporterFailure(
                     MetricsSource,
                     failure == CollectorSourceFailure.Unauthorized ? "unauthorized" : "unavailable");
                 await ReportFailure(failure, stoppingToken);

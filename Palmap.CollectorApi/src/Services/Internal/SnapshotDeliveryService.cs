@@ -16,6 +16,7 @@ internal sealed class SnapshotDeliveryService(
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<PalmapIngestSettings> settings,
     TimeProvider timeProvider,
+    ICollectorMetricService collectorMetrics,
     ILogger<SnapshotDeliveryService> logger) : BackgroundService
 {
     public const string HttpClientName = "PalmapIngest";
@@ -138,7 +139,7 @@ internal sealed class SnapshotDeliveryService(
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
             result = new(DeliveryOutcome.Retry);
-            CollectorMetrics.RecordIngestDelivery(
+            collectorMetrics.RecordIngestDelivery(
                 OutcomeLabel(result.Outcome),
                 Stopwatch.GetElapsedTime(started).TotalSeconds);
             return result;
@@ -146,7 +147,7 @@ internal sealed class SnapshotDeliveryService(
         catch (HttpRequestException)
         {
             result = new(DeliveryOutcome.Retry);
-            CollectorMetrics.RecordIngestDelivery(
+            collectorMetrics.RecordIngestDelivery(
                 OutcomeLabel(result.Outcome),
                 Stopwatch.GetElapsedTime(started).TotalSeconds);
             return result;
@@ -159,7 +160,7 @@ internal sealed class SnapshotDeliveryService(
                 response.Headers.RetryAfter,
                 timeProvider.GetUtcNow(),
                 TimeSpan.FromMilliseconds(current.MaximumRetryDelayMs));
-            CollectorMetrics.RecordIngestDelivery(
+            collectorMetrics.RecordIngestDelivery(
                 OutcomeLabel(result.Outcome),
                 Stopwatch.GetElapsedTime(started).TotalSeconds);
             return result;
