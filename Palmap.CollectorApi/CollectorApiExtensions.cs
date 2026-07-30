@@ -32,6 +32,8 @@ public static class CollectorApiExtensions
         builder.Services.AddSingleton<SnapshotCollectorApiService>();
         builder.Services.AddSingleton<ICollectorApiService>(services =>
             services.GetRequiredService<SnapshotCollectorApiService>());
+        builder.Services.AddSingleton<ICollectorMetricsSnapshotSource>(services =>
+            services.GetRequiredService<SnapshotCollectorApiService>());
         builder.Services.AddHttpClient(SnapshotDeliveryService.HttpClientName, client =>
             client.Timeout = Timeout.InfiniteTimeSpan);
         builder.Services.AddHostedService<SnapshotDeliveryService>();

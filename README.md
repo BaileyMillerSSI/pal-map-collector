@@ -41,6 +41,7 @@ After both services are healthy:
 ```powershell
 Invoke-WebRequest http://127.0.0.1:8080/health/live
 Invoke-WebRequest http://127.0.0.1:8080/health/ready
+Invoke-WebRequest http://127.0.0.1:9090/metrics
 ```
 
 Stop the stack with:
@@ -49,7 +50,7 @@ Stop the stack with:
 docker compose down
 ```
 
-World data remains in `./palworld`. REST port 8212 and the collector port are bound to host loopback only. Do not publicly expose the Palworld REST API: its credentials grant administrative access.
+World data remains in `./palworld`. REST port 8212, the collector health port, and the optional Prometheus scrape port are bound to host loopback only. Do not publicly expose the Palworld REST API: its credentials grant administrative access. Do not publicly expose `/metrics` either; it is unauthenticated.
 
 ### Use the published collector image
 
@@ -103,8 +104,18 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `Collector:ServerSettingsUpdateIntervalMs` | `3600000` | Server settings polling period |
 | `Collector:FailureRetryIntervalMs` | `5000` | Retry period after an unavailable server or failed report |
 | `Collector:PalworldHealthCacheDurationMs` | `5000` | Shared health-probe cache duration |
+| `PrometheusExporter:Enabled` | `false` | Opt-in OpenTelemetry Prometheus HttpListener scrape endpoint |
+| `PrometheusExporter:Host` | `+` | HttpListener bind host (`+` listens on all interfaces inside the container) |
+| `PrometheusExporter:Port` | `9090` | Dedicated scrape listen port (separate from health on 8080) |
+| `PrometheusExporter:SampleIntervalMs` | `15000` | How often Palworld `/v1/api/metrics` is sampled into gauges |
 
 Endpoint overrides must be absolute HTTP or HTTPS URLs and cannot contain user information, a query, or a fragment. Any value other than the hosted default requires both the `Development` environment and `PalmapIngest:AllowInsecureHttp=true`, even when the override itself uses HTTPS. All intervals must be between 1 and `2147483647` milliseconds. The Palworld password, Pal-Map client secret, and privacy key have no real checked-in defaults; missing or malformed configuration stops the process during startup with an options-validation error.
+
+When `PrometheusExporter:Enabled` is `true`, the process also listens for Prometheus scrapes on `http://{Host}:{Port}/metrics` (OpenTelemetry HttpListener). The sample Compose stack publishes that port on loopback as `127.0.0.1:9090`. Keep the scrape endpoint private the same way as `/health/*`; it is not authenticated. Sampling of Palworld `/v1/api/metrics` uses `SampleIntervalMs` and the shared Palworld health gate. Snapshot-derived and collector self-metrics are observed from in-memory state without extra `game-data` polls.
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:9090/metrics
+```
 
 Reporter loops update retained sanitized state without waiting for network delivery. The delivery worker sends one stable serialized envelope per attempt sequence, honors bounded `Retry-After` values, and retains only the latest pending snapshot during outages. Authentication and protocol-compatibility failures stop the collector; rejected payloads and exhausted transient retries move on to the latest available state. Raw player, account, platform, network, and Palworld error data are neither included in the public contract nor written to delivery logs.
 
@@ -158,9 +169,9 @@ dotnet test Palmap.IntegrationTests
 docker compose down
 ```
 
-Optional integration-test overrides are `PALMAP_PALWORLD_URL` (default `http://127.0.0.1:8212`) and `PALMAP_COLLECTOR_URL` (default `http://127.0.0.1:8080`).
+Optional integration-test overrides are `PALMAP_PALWORLD_URL` (default `http://127.0.0.1:8212`), `PALMAP_COLLECTOR_URL` (default `http://127.0.0.1:8080`), and `PALMAP_METRICS_URL` (default `http://127.0.0.1:9090`). The sample `config/collector.env.example` enables the Prometheus exporter so the live suite can scrape `/metrics`.
 
-The live suite checks server info, players, settings, world actor data, metrics, rejected credentials, and both collector health endpoints.
+The live suite checks server info, players, settings, world actor data, metrics, rejected credentials, both collector health endpoints, and the Prometheus scrape body when the exporter is enabled.
 
 ## Continuous integration and delivery
 
@@ -177,5 +188,5 @@ No registry secret is required. The workflow grants `packages: write` only to th
 - `docker compose up --wait` may take several minutes on first boot while Steam downloads Palworld. Follow progress with `docker compose logs -f palworld`.
 - A healthy Palworld process with an unhealthy collector readiness endpoint usually indicates a URL or admin-password mismatch. The password must match in the copied `server.env` and `collector.env` files.
 - A failing `/game-data` request usually means `ENABLE_GAMEDATA_API=true` was not applied before the Palworld server started.
-- If port 8212 or 8080 is already occupied, change the host side of the loopback port mapping and set the corresponding integration-test URL. The collector-to-Palworld URL inside Compose remains `http://palworld:8212`.
+- If port 8212, 8080, or 9090 is already occupied, change the host side of the loopback port mapping and set the corresponding integration-test URL (`PALMAP_PALWORLD_URL`, `PALMAP_COLLECTOR_URL`, or `PALMAP_METRICS_URL`). The collector-to-Palworld URL inside Compose remains `http://palworld:8212`.
 - Repeated delivery retries usually indicate an unreachable ingest URL or an unavailable hosted API. Any endpoint override is accepted only when both `DOTNET_ENVIRONMENT=Development` and `PalmapIngest__AllowInsecureHttp=true`; production uses the hosted HTTPS default.

@@ -12,14 +12,17 @@ internal sealed class GameServerSettingsReportTimedBackgroundService(
     IOptionsMonitor<CollectorSettings> collectorSettings,
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
+    TimeProvider timeProvider,
     ILogger<GameServerSettingsReportTimedBackgroundService> logger)
-    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, logger)
+    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, timeProvider, logger)
 {
     protected override int ReportIntervalMs => collectorSettings.CurrentValue.ServerSettingsUpdateIntervalMs;
 
     protected override int FailureRetryIntervalMs => collectorSettings.CurrentValue.FailureRetryIntervalMs;
 
     protected override string ReportDescription => "server settings";
+
+    protected override string MetricsSource => "settings";
 
     internal override async Task ReportOnce(CancellationToken cancellationToken)
     {

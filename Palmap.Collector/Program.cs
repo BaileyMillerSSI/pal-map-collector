@@ -43,7 +43,8 @@ internal static class Program
 
             builder
                 .AddPalworldApi()
-                .AddCollectorApi();
+                .AddCollectorApi()
+                .AddPrometheusExporter();
 
             AddCollectorBackgroundServices(builder.Services);
             builder.Services

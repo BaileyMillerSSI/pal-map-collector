@@ -35,6 +35,32 @@ public sealed class ComposeIntegrationTests
         };
         Assert.True((await collector.GetAsync("health/live")).IsSuccessStatusCode);
         Assert.True((await collector.GetAsync("health/ready")).IsSuccessStatusCode);
+
+        using var metrics = new HttpClient
+        {
+            BaseAddress = new Uri(Environment.GetEnvironmentVariable("PALMAP_METRICS_URL")
+                ?? "http://127.0.0.1:9090")
+        };
+        string? metricsBody = null;
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            var metricsResponse = await metrics.GetAsync("metrics");
+            if (metricsResponse.IsSuccessStatusCode)
+            {
+                metricsBody = await metricsResponse.Content.ReadAsStringAsync();
+                if (metricsBody.Contains("palworld_server_fps", StringComparison.Ordinal) &&
+                    metricsBody.Contains("palmap_ingest_queue_depth", StringComparison.Ordinal))
+                {
+                    break;
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+
+        Assert.NotNull(metricsBody);
+        Assert.Contains("palworld_server_fps", metricsBody, StringComparison.Ordinal);
+        Assert.Contains("palmap_ingest_queue_depth", metricsBody, StringComparison.Ordinal);
     }
 
     [IntegrationFact]

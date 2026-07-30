@@ -12,14 +12,17 @@ internal sealed class PlayerLocationReporterTimedBackgroundService(
     IOptionsMonitor<CollectorSettings> collectorSettings,
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
+    TimeProvider timeProvider,
     ILogger<PlayerLocationReporterTimedBackgroundService> logger)
-    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, logger)
+    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, timeProvider, logger)
 {
     protected override int ReportIntervalMs => collectorSettings.CurrentValue.PlayerLocationUpdateIntervalMs;
 
     protected override int FailureRetryIntervalMs => collectorSettings.CurrentValue.FailureRetryIntervalMs;
 
     protected override string ReportDescription => "player locations";
+
+    protected override string MetricsSource => "players";
 
     internal override async Task ReportOnce(CancellationToken cancellationToken)
     {

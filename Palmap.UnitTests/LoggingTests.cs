@@ -78,6 +78,7 @@ public sealed class LoggingTests
             new StaticOptionsMonitor<CollectorSettings>(new()),
             new StubPalworldApiHealthService(),
             new RecordingCollectorDelay(),
+            TimeProvider.System,
             logger);
 
         await worker.ReportOnce(CancellationToken.None);
@@ -98,6 +99,7 @@ public sealed class LoggingTests
             new StaticOptionsMonitor<CollectorSettings>(new()),
             new StubPalworldApiHealthService(),
             new RecordingCollectorDelay(),
+            TimeProvider.System,
             logger);
 
         worker.LogSourceFailure(new InvalidDataException(sensitiveText));

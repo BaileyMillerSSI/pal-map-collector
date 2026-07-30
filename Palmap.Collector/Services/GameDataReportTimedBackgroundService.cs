@@ -14,8 +14,9 @@ internal sealed class GameDataReportTimedBackgroundService(
     IOptionsMonitor<CollectorSettings> collectorSettings,
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
+    TimeProvider timeProvider,
     ILogger<GameDataReportTimedBackgroundService> logger)
-    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, logger)
+    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, timeProvider, logger)
 {
     private long _completedRevision = -1;
 
@@ -24,6 +25,8 @@ internal sealed class GameDataReportTimedBackgroundService(
     protected override int FailureRetryIntervalMs => collectorSettings.CurrentValue.FailureRetryIntervalMs;
 
     protected override string ReportDescription => "game data";
+
+    protected override string MetricsSource => "world";
 
     internal override async Task ReportOnce(CancellationToken cancellationToken)
     {
@@ -56,7 +59,6 @@ internal sealed class GameDataReportTimedBackgroundService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // The other wait completed first, or the reporter is stopping.
         }
     }
 

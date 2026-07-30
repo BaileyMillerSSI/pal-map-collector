@@ -1,5 +1,6 @@
 using System.Net;
 using Palmap.Collector.Health;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services;
 
 namespace Palmap.Collector.Services;
@@ -7,6 +8,7 @@ namespace Palmap.Collector.Services;
 internal abstract class TimedReporterBackgroundService(
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
+    TimeProvider timeProvider,
     ILogger logger) : BackgroundService
 {
     private int _consecutiveSourceFailures;
@@ -16,6 +18,8 @@ internal abstract class TimedReporterBackgroundService(
     protected abstract int FailureRetryIntervalMs { get; }
 
     protected abstract string ReportDescription { get; }
+
+    protected abstract string MetricsSource { get; }
 
     internal abstract Task ReportOnce(CancellationToken cancellationToken);
 
@@ -34,6 +38,7 @@ internal abstract class TimedReporterBackgroundService(
                 await palworldHealthService.WaitUntilHealthy(stoppingToken);
                 await ReportOnce(stoppingToken);
                 LogSourceRecovery();
+                CollectorMetrics.RecordReporterSuccess(MetricsSource, timeProvider);
                 await WaitAfterSuccessfulReport(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -57,6 +62,9 @@ internal abstract class TimedReporterBackgroundService(
                     LogSourceFailure(exception);
                 }
 
+                CollectorMetrics.RecordReporterFailure(
+                    MetricsSource,
+                    failure == CollectorSourceFailure.Unauthorized ? "unauthorized" : "unavailable");
                 await ReportFailure(failure, stoppingToken);
 
                 try
