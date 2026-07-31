@@ -51,7 +51,9 @@ public sealed class ComposeIntegrationTests
                 if (metricsBody.Contains("palworld_server_fps", StringComparison.Ordinal) &&
                     metricsBody.Contains("palmap_ingest_queue_depth", StringComparison.Ordinal) &&
                     metricsBody.Contains("palworld_players_snapshot", StringComparison.Ordinal) &&
-                    metricsBody.Contains("palworld_server_configured_max_players", StringComparison.Ordinal))
+                    metricsBody.Contains("palworld_server_configured_max_players", StringComparison.Ordinal) &&
+                    metricsBody.Contains("palworld_companion_level_max", StringComparison.Ordinal) &&
+                    metricsBody.Contains("palworld_wild_pal_level_max", StringComparison.Ordinal))
                 {
                     break;
                 }
@@ -66,6 +68,11 @@ public sealed class ComposeIntegrationTests
         Assert.Contains("palworld_players_snapshot", metricsBody, StringComparison.Ordinal);
         Assert.Contains("palworld_server_configured_max_players", metricsBody, StringComparison.Ordinal);
         Assert.Contains("palworld_bases_total", metricsBody, StringComparison.Ordinal);
+        Assert.Contains("palworld_companion_level_max", metricsBody, StringComparison.Ordinal);
+        Assert.Contains("palworld_wild_pal_level_max", metricsBody, StringComparison.Ordinal);
+        Assert.Contains("palworld_injured_players", metricsBody, StringComparison.Ordinal);
+        Assert.Contains("palworld_players_with_guild", metricsBody, StringComparison.Ordinal);
+        Assert.Contains("palworld_player_hp", metricsBody, StringComparison.Ordinal);
     }
 
     [IntegrationFact]

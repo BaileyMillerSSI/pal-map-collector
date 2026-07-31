@@ -15,4 +15,6 @@ internal sealed record CollectorMetricsSnapshot(
     SourceStatus ServerStatus,
     IReadOnlyList<PublicPlayer>? Players,
     PublicWorldData? World,
-    PublicServerDetails? Server);
+    PublicServerDetails? Server,
+    IReadOnlyList<GuildRuntimeMetrics>? GuildRuntime,
+    WorldRuntimeMetrics? WorldRuntime);

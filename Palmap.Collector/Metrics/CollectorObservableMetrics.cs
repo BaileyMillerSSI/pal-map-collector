@@ -55,6 +55,28 @@ internal sealed class CollectorObservableMetrics(
         meter.CreateObservableGauge("palworld_guild_buildings", ObserveGuildBuildings);
         meter.CreateObservableGauge("palworld_guild_estimated_power", ObserveGuildEstimatedPower);
         meter.CreateObservableGauge("palworld_guild_hp", ObserveGuildHp);
+        meter.CreateObservableGauge("palworld_guild_total_level", ObserveGuildTotalLevel);
+        meter.CreateObservableGauge("palworld_guild_building_count_complete", ObserveGuildBuildingCountComplete);
+        meter.CreateObservableGauge("palworld_guild_base_pal_count_max", ObserveGuildBasePalCountMax);
+        meter.CreateObservableGauge("palworld_guild_base_pal_count_avg", ObserveGuildBasePalCountAvg);
+        meter.CreateObservableGauge("palworld_guild_base_estimated_power_max", ObserveGuildBaseEstimatedPowerMax);
+        meter.CreateObservableGauge("palworld_guild_base_estimated_power_avg", ObserveGuildBaseEstimatedPowerAvg);
+        meter.CreateObservableGauge("palworld_guild_base_total_level_max", ObserveGuildBaseTotalLevelMax);
+        meter.CreateObservableGauge("palworld_guild_base_total_level_avg", ObserveGuildBaseTotalLevelAvg);
+        meter.CreateObservableGauge("palworld_guild_base_hp", ObserveGuildBaseHpMax);
+        meter.CreateObservableGauge("palworld_guild_injured_base_pals", ObserveGuildInjuredBasePals);
+        meter.CreateObservableGauge("palworld_guild_hp_deficit", ObserveGuildHpDeficit);
+        meter.CreateObservableGauge("palworld_guild_base_pal_level_max", ObserveGuildBasePalLevelMax);
+        meter.CreateObservableGauge(
+            "palworld_guild_base_pal_estimated_power_max",
+            ObserveGuildBasePalEstimatedPowerMax);
+        meter.CreateObservableGauge("palworld_guild_inactive_base_pals", ObserveGuildInactiveBasePals);
+        meter.CreateObservableGauge("palworld_guild_active_base_pals", ObserveGuildActiveBasePals);
+        meter.CreateObservableGauge("palworld_guild_companion_pals", ObserveGuildCompanionPals);
+        meter.CreateObservableGauge("palworld_guild_companion_level_max", ObserveGuildCompanionLevelMax);
+        meter.CreateObservableGauge(
+            "palworld_guild_companion_estimated_power_max",
+            ObserveGuildCompanionEstimatedPowerMax);
         meter.CreateObservableGauge(
             "palworld_player_ping_milliseconds_avg",
             ObservePlayerPingAvg,
@@ -67,6 +89,17 @@ internal sealed class CollectorObservableMetrics(
         meter.CreateObservableGauge("palworld_player_level_max", ObservePlayerLevelMax);
         meter.CreateObservableGauge("palworld_player_buildings_total", ObservePlayerBuildingsTotal);
         meter.CreateObservableGauge("palworld_players_by_location", ObservePlayersByLocation);
+        meter.CreateObservableGauge("palworld_players_by_layer", ObservePlayersByLayer);
+        meter.CreateObservableGauge("palworld_players_with_guild", ObservePlayersWithGuild);
+        meter.CreateObservableGauge("palworld_players_without_guild", ObservePlayersWithoutGuild);
+        meter.CreateObservableGauge("palworld_companion_level_avg", ObserveCompanionLevelAvg);
+        meter.CreateObservableGauge("palworld_companion_level_max", ObserveCompanionLevelMax);
+        meter.CreateObservableGauge(
+            "palworld_companion_estimated_power_max",
+            ObserveCompanionEstimatedPowerMax);
+        meter.CreateObservableGauge("palworld_player_hp", ObservePlayerHp);
+        meter.CreateObservableGauge("palworld_injured_players", ObserveInjuredPlayers);
+        meter.CreateObservableGauge("palworld_wild_pal_level_max", ObserveWildPalLevelMax);
 
         meter.CreateObservableGauge("palworld_server_configured_max_players", ObserveConfiguredMaxPlayers);
         meter.CreateObservableGauge("palworld_server_max_pals_per_base", ObserveMaxPalsPerBase);
@@ -262,6 +295,75 @@ internal sealed class CollectorObservableMetrics(
         }
     }
 
+    private IEnumerable<Measurement<long>> ObserveGuildTotalLevel() =>
+        GuildLong(snapshotSource.GetMetricsSnapshot().World?.Guilds, guild => guild.TotalLevel);
+
+    private IEnumerable<Measurement<long>> ObserveGuildBuildingCountComplete() =>
+        GuildLong(
+            snapshotSource.GetMetricsSnapshot().World?.Guilds,
+            guild => guild.BuildingCountComplete ? 1 : 0);
+
+    private IEnumerable<Measurement<long>> ObserveGuildBasePalCountMax() =>
+        GuildLongFromBases(guild => guild.Bases.Count == 0 ? 0 : guild.Bases.Max(b => (long)b.PalCount));
+
+    private IEnumerable<Measurement<double>> ObserveGuildBasePalCountAvg() =>
+        GuildDoubleFromBases(guild => guild.Bases.Count == 0 ? 0 : guild.Bases.Average(b => b.PalCount));
+
+    private IEnumerable<Measurement<double>> ObserveGuildBaseEstimatedPowerMax() =>
+        GuildDoubleFromBases(guild => guild.Bases.Count == 0 ? 0 : guild.Bases.Max(b => b.EstimatedPower));
+
+    private IEnumerable<Measurement<double>> ObserveGuildBaseEstimatedPowerAvg() =>
+        GuildDoubleFromBases(guild => guild.Bases.Count == 0 ? 0 : guild.Bases.Average(b => b.EstimatedPower));
+
+    private IEnumerable<Measurement<long>> ObserveGuildBaseTotalLevelMax() =>
+        GuildLongFromBases(guild => guild.Bases.Count == 0 ? 0 : guild.Bases.Max(b => b.TotalLevel));
+
+    private IEnumerable<Measurement<double>> ObserveGuildBaseTotalLevelAvg() =>
+        GuildDoubleFromBases(guild => guild.Bases.Count == 0 ? 0 : guild.Bases.Average(b => b.TotalLevel));
+
+    private IEnumerable<Measurement<double>> ObserveGuildBaseHpMax()
+    {
+        if (snapshotSource.GetMetricsSnapshot().World?.Guilds is not { } guilds)
+        {
+            yield break;
+        }
+
+        foreach (var guild in guilds)
+        {
+            var maxCurrent = guild.Bases.Count == 0 ? 0 : guild.Bases.Max(b => b.CurrentHp);
+            var maxMax = guild.Bases.Count == 0 ? 0 : guild.Bases.Max(b => b.MaxHp);
+            yield return GuildHpTagged(guild, maxCurrent, "current");
+            yield return GuildHpTagged(guild, maxMax, "max");
+        }
+    }
+
+    private IEnumerable<Measurement<long>> ObserveGuildInjuredBasePals() =>
+        GuildRuntimeLong(runtime => runtime.InjuredBasePals);
+
+    private IEnumerable<Measurement<double>> ObserveGuildHpDeficit() =>
+        GuildRuntimeDouble(runtime => runtime.HpDeficit);
+
+    private IEnumerable<Measurement<long>> ObserveGuildBasePalLevelMax() =>
+        GuildRuntimeLong(runtime => runtime.BasePalLevelMax);
+
+    private IEnumerable<Measurement<double>> ObserveGuildBasePalEstimatedPowerMax() =>
+        GuildRuntimeDouble(runtime => runtime.BasePalEstimatedPowerMax);
+
+    private IEnumerable<Measurement<long>> ObserveGuildInactiveBasePals() =>
+        GuildRuntimeLong(runtime => runtime.InactiveBasePals);
+
+    private IEnumerable<Measurement<long>> ObserveGuildActiveBasePals() =>
+        GuildRuntimeLong(runtime => runtime.ActiveBasePals);
+
+    private IEnumerable<Measurement<long>> ObserveGuildCompanionPals() =>
+        GuildRuntimeLong(runtime => runtime.CompanionPals);
+
+    private IEnumerable<Measurement<long>> ObserveGuildCompanionLevelMax() =>
+        GuildRuntimeLong(runtime => runtime.CompanionLevelMax);
+
+    private IEnumerable<Measurement<double>> ObserveGuildCompanionEstimatedPowerMax() =>
+        GuildRuntimeDouble(runtime => runtime.CompanionEstimatedPowerMax);
+
     private IEnumerable<Measurement<double>> ObservePlayerPingAvg()
     {
         if (snapshotSource.GetMetricsSnapshot().Players is { Count: > 0 } players)
@@ -314,6 +416,88 @@ internal sealed class CollectorObservableMetrics(
         yield return LocationTagged(players.Count(player => player.Location.Kind == PlayerLocationKind.Overworld), "overworld");
         yield return LocationTagged(players.Count(player => player.Location.Kind == PlayerLocationKind.Instance), "instance");
         yield return LocationTagged(players.Count(player => player.Location.Kind == PlayerLocationKind.Unknown), "unknown");
+    }
+
+    private IEnumerable<Measurement<long>> ObservePlayersByLayer()
+    {
+        if (snapshotSource.GetMetricsSnapshot().Players is not { } players)
+        {
+            yield break;
+        }
+
+        yield return LayerTagged(
+            players.Count(player => player.Location.Layer == MapLayerId.Palpagos),
+            "palpagos");
+        yield return LayerTagged(
+            players.Count(player => player.Location.Layer == MapLayerId.WorldTree),
+            "world-tree");
+    }
+
+    private IEnumerable<Measurement<long>> ObservePlayersWithGuild()
+    {
+        if (snapshotSource.GetMetricsSnapshot().Players is { } players)
+        {
+            yield return new(players.Count(player => player.GuildId is not null));
+        }
+    }
+
+    private IEnumerable<Measurement<long>> ObservePlayersWithoutGuild()
+    {
+        if (snapshotSource.GetMetricsSnapshot().Players is { } players)
+        {
+            yield return new(players.Count(player => player.GuildId is null));
+        }
+    }
+
+    private IEnumerable<Measurement<double>> ObserveCompanionLevelAvg()
+    {
+        if (snapshotSource.GetMetricsSnapshot().WorldRuntime is { } runtime)
+        {
+            yield return new(runtime.CompanionLevelAvg);
+        }
+    }
+
+    private IEnumerable<Measurement<long>> ObserveCompanionLevelMax()
+    {
+        if (snapshotSource.GetMetricsSnapshot().WorldRuntime is { } runtime)
+        {
+            yield return new(runtime.CompanionLevelMax);
+        }
+    }
+
+    private IEnumerable<Measurement<double>> ObserveCompanionEstimatedPowerMax()
+    {
+        if (snapshotSource.GetMetricsSnapshot().WorldRuntime is { } runtime)
+        {
+            yield return new(runtime.CompanionEstimatedPowerMax);
+        }
+    }
+
+    private IEnumerable<Measurement<double>> ObservePlayerHp()
+    {
+        if (snapshotSource.GetMetricsSnapshot().WorldRuntime is not { } runtime)
+        {
+            yield break;
+        }
+
+        yield return new(runtime.PlayerHpCurrent, new KeyValuePair<string, object?>("kind", "current"));
+        yield return new(runtime.PlayerHpMax, new KeyValuePair<string, object?>("kind", "max"));
+    }
+
+    private IEnumerable<Measurement<long>> ObserveInjuredPlayers()
+    {
+        if (snapshotSource.GetMetricsSnapshot().WorldRuntime is { } runtime)
+        {
+            yield return new(runtime.InjuredPlayers);
+        }
+    }
+
+    private IEnumerable<Measurement<long>> ObserveWildPalLevelMax()
+    {
+        if (snapshotSource.GetMetricsSnapshot().WorldRuntime is { } runtime)
+        {
+            yield return new(runtime.WildPalLevelMax);
+        }
     }
 
     private IEnumerable<Measurement<long>> ObserveConfiguredMaxPlayers()
@@ -636,6 +820,44 @@ internal sealed class CollectorObservableMetrics(
         }
     }
 
+    private IEnumerable<Measurement<long>> GuildLongFromBases(Func<PublicGuildAggregate, long> value) =>
+        GuildLong(snapshotSource.GetMetricsSnapshot().World?.Guilds, value);
+
+    private IEnumerable<Measurement<double>> GuildDoubleFromBases(Func<PublicGuildAggregate, double> value) =>
+        GuildDouble(snapshotSource.GetMetricsSnapshot().World?.Guilds, value);
+
+    private IEnumerable<Measurement<long>> GuildRuntimeLong(Func<GuildRuntimeMetrics, long> value)
+    {
+        if (snapshotSource.GetMetricsSnapshot().GuildRuntime is not { } guilds)
+        {
+            yield break;
+        }
+
+        foreach (var guild in guilds)
+        {
+            yield return new(
+                value(guild),
+                new KeyValuePair<string, object?>("guild_id", guild.GuildId),
+                new KeyValuePair<string, object?>("guild_name", guild.GuildName));
+        }
+    }
+
+    private IEnumerable<Measurement<double>> GuildRuntimeDouble(Func<GuildRuntimeMetrics, double> value)
+    {
+        if (snapshotSource.GetMetricsSnapshot().GuildRuntime is not { } guilds)
+        {
+            yield break;
+        }
+
+        foreach (var guild in guilds)
+        {
+            yield return new(
+                value(guild),
+                new KeyValuePair<string, object?>("guild_id", guild.GuildId),
+                new KeyValuePair<string, object?>("guild_name", guild.GuildName));
+        }
+    }
+
     private static Measurement<long> GuildTagged(PublicGuildAggregate guild, long value) =>
         new(
             value,
@@ -660,6 +882,9 @@ internal sealed class CollectorObservableMetrics(
 
     private static Measurement<long> LocationTagged(int value, string kind) =>
         new(value, new KeyValuePair<string, object?>("kind", kind));
+
+    private static Measurement<long> LayerTagged(int value, string layer) =>
+        new(value, new KeyValuePair<string, object?>("layer", layer));
 
     private static Measurement<long> StateTagged(SnapshotSourceState state, string section) =>
         new(

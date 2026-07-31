@@ -322,13 +322,189 @@ public sealed class PrometheusExporterTests
             ServerStatus: new SourceStatus(SnapshotSourceState.Pending, false, null, null),
             Players: null,
             World: null,
-            Server: null);
+            Server: null,
+            GuildRuntime: null,
+            WorldRuntime: null);
 
         Assert.Null(empty.Players);
         Assert.Null(empty.World);
         Assert.Null(empty.Server);
+        Assert.Null(empty.GuildRuntime);
+        Assert.Null(empty.WorldRuntime);
         Assert.Empty(CollectorObservableMetrics.ServerRuleRates(EmptyRules()));
         Assert.Empty(CollectorObservableMetrics.ServerRuleEnabled(EmptyRules()));
+    }
+
+    [Fact]
+    public async Task SnapshotMetricsExposeGuildRuntimeAndWorldRuntimeAggregates()
+    {
+        var (service, _, _) = CreateCollectorService();
+
+        await service.ReportPlayerLocations(new PlayerListResponse
+        {
+            Players =
+            [
+                new PalworldPlayer
+                {
+                    Name = "One",
+                    PlayerId = "player-1",
+                    UserId = "user-1",
+                    Ping = 10,
+                    Level = 5,
+                    BuildingCount = 2,
+                    LocationX = 12_500,
+                    LocationY = -4_200
+                },
+                new PalworldPlayer
+                {
+                    Name = "Solo",
+                    PlayerId = "player-2",
+                    UserId = "user-2",
+                    Ping = 20,
+                    Level = 8,
+                    BuildingCount = null,
+                    LocationX = 1,
+                    LocationY = 2
+                }
+            ]
+        });
+        var revision = service.CaptureWorldRevision();
+        await service.ReportGameData(
+            new WorldActorSnapshotResponse
+            {
+                Time = "2026-07-21 12:00",
+                Fps = 60,
+                AverageFps = 55,
+                ActorData =
+                [
+                    new WorldActor
+                    {
+                        Type = "PalBox",
+                        GuildId = "guild-a",
+                        GuildName = "Guild Alpha",
+                        LocationX = 12_000,
+                        LocationY = -4_000,
+                        LocationZ = 0
+                    },
+                    new WorldActor
+                    {
+                        Type = "Character",
+                        UnitType = "Player",
+                        UserId = "user-1",
+                        GuildId = "guild-a",
+                        GuildName = "Guild Alpha",
+                        HitPoints = 50,
+                        MaxHitPoints = 100
+                    },
+                    new WorldActor
+                    {
+                        Type = "Character",
+                        UnitType = "Player",
+                        UserId = "user-2",
+                        HitPoints = 100,
+                        MaxHitPoints = 100
+                    },
+                    new WorldActor
+                    {
+                        Type = "Character",
+                        UnitType = "BaseCampPal",
+                        GuildId = "guild-a",
+                        Level = 4,
+                        HitPoints = 20,
+                        MaxHitPoints = 40,
+                        IsActive = "true",
+                        LocationX = 12_010,
+                        LocationY = -3_990
+                    },
+                    new WorldActor
+                    {
+                        Type = "Character",
+                        UnitType = "BaseCampPal",
+                        GuildId = "guild-a",
+                        Level = 10,
+                        HitPoints = 100,
+                        MaxHitPoints = 100,
+                        IsActive = "false",
+                        LocationX = 12_020,
+                        LocationY = -3_980
+                    },
+                    new WorldActor
+                    {
+                        Type = "Character",
+                        UnitType = "BaseCampPal",
+                        GuildId = "guild-a",
+                        Level = 2,
+                        HitPoints = 5,
+                        MaxHitPoints = 5,
+                        IsActive = "true"
+                    },
+                    new WorldActor
+                    {
+                        Type = "Character",
+                        UnitType = "OtomoPal",
+                        GuildId = "guild-a",
+                        Level = 7,
+                        HitPoints = 30,
+                        MaxHitPoints = 30
+                    },
+                    new WorldActor
+                    {
+                        Type = "Character",
+                        UnitType = "OtomoPal",
+                        Level = 3,
+                        HitPoints = 10,
+                        MaxHitPoints = 10
+                    },
+                    new WorldActor
+                    {
+                        Type = "Character",
+                        UnitType = "WildPal",
+                        Level = 12,
+                        HitPoints = 80,
+                        MaxHitPoints = 80
+                    }
+                ]
+            },
+            requestedRevision: revision);
+
+        var snapshot = service.GetMetricsSnapshot();
+
+        Assert.NotNull(snapshot.Players);
+        Assert.Equal(1, snapshot.Players.Count(player => player.GuildId is not null));
+        Assert.Equal(1, snapshot.Players.Count(player => player.GuildId is null));
+        Assert.Equal(2, snapshot.Players.Count(player => player.Location.Layer == MapLayerId.Palpagos));
+        Assert.Equal(0, snapshot.Players.Count(player => player.Location.Layer == MapLayerId.WorldTree));
+
+        Assert.NotNull(snapshot.World);
+        var guild = Assert.Single(snapshot.World.Guilds);
+        Assert.Equal(3, guild.BasePalCount);
+        Assert.Equal(16, guild.TotalLevel);
+        Assert.Equal(1, guild.UnassignedBasePalCount);
+        Assert.Single(guild.Bases);
+        Assert.Equal(2, guild.Bases[0].PalCount);
+        Assert.Equal(14, guild.Bases[0].TotalLevel);
+
+        Assert.NotNull(snapshot.GuildRuntime);
+        var runtime = Assert.Single(snapshot.GuildRuntime);
+        Assert.Equal(guild.Id, runtime.GuildId);
+        Assert.Equal(1, runtime.InjuredBasePals);
+        Assert.Equal(20, runtime.HpDeficit);
+        Assert.Equal(10, runtime.BasePalLevelMax);
+        Assert.Equal(1000, runtime.BasePalEstimatedPowerMax);
+        Assert.Equal(1, runtime.InactiveBasePals);
+        Assert.Equal(2, runtime.ActiveBasePals);
+        Assert.Equal(1, runtime.CompanionPals);
+        Assert.Equal(7, runtime.CompanionLevelMax);
+        Assert.Equal(210, runtime.CompanionEstimatedPowerMax);
+
+        Assert.NotNull(snapshot.WorldRuntime);
+        Assert.Equal(5, snapshot.WorldRuntime.CompanionLevelAvg);
+        Assert.Equal(7, snapshot.WorldRuntime.CompanionLevelMax);
+        Assert.Equal(210, snapshot.WorldRuntime.CompanionEstimatedPowerMax);
+        Assert.Equal(150, snapshot.WorldRuntime.PlayerHpCurrent);
+        Assert.Equal(200, snapshot.WorldRuntime.PlayerHpMax);
+        Assert.Equal(1, snapshot.WorldRuntime.InjuredPlayers);
+        Assert.Equal(12, snapshot.WorldRuntime.WildPalLevelMax);
     }
 
     [Theory]
