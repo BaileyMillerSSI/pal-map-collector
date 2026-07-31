@@ -114,6 +114,8 @@ Endpoint overrides must be absolute HTTP or HTTPS URLs and cannot contain user i
 
 When `PrometheusExporter:Enabled` is `true`, the process also listens for Prometheus scrapes on `http://{Host}:{Port}/metrics` (OpenTelemetry HttpListener). The sample Compose stack publishes that port on loopback as `127.0.0.1:9090`. Keep the scrape endpoint private the same way as `/health/*`; it is not authenticated. Sampling of Palworld `/v1/api/metrics` uses `SampleIntervalMs` and the shared Palworld health gate. Snapshot-derived and collector self-metrics are observed from in-memory state without extra `game-data` polls.
 
+Exported families include REST `/metrics` gauges (`palworld_server_fps`, players online/max, uptime, base camps, world days), snapshot aggregates (`palworld_actors`, player ping/level, location kinds), guild/base stats (`palworld_guild_*`, `palworld_bases_total`, `palworld_players_snapshot`, in-game time minutes), server rules (`palworld_server_configured_max_players`, `palworld_server_rule_rate`, `palworld_server_rule_enabled`, death-penalty info), and collector health (`palmap_*`). Guild series carry `guild_id` and `guild_name` labels suitable for a single-server scrape.
+
 ```powershell
 Invoke-WebRequest http://127.0.0.1:9090/metrics
 ```

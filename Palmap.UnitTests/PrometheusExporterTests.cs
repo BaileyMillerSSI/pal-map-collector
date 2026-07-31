@@ -1,5 +1,6 @@
 using System.Diagnostics.Metrics;
 using System.Net;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Palmap.Collector.Configuration;
 using Palmap.Collector.Metrics;
@@ -167,6 +168,170 @@ public sealed class PrometheusExporterTests
     }
 
     [Theory]
+    [InlineData("14:30", 870)]
+    [InlineData("0:00", 0)]
+    [InlineData("23:59", 1439)]
+    [InlineData("9:05", 545)]
+    public void ParsesInGameTimeMinutes(string time, long expectedMinutes)
+    {
+        Assert.True(CollectorObservableMetrics.TryParseInGameTimeMinutes(time, out var minutes));
+        Assert.Equal(expectedMinutes, minutes);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("nope")]
+    [InlineData("24:00")]
+    [InlineData("12:60")]
+    public void RejectsInvalidInGameTime(string? time)
+    {
+        Assert.False(CollectorObservableMetrics.TryParseInGameTimeMinutes(time, out _));
+    }
+
+    [Fact]
+    public void ServerRuleRatesAndFlagsOmitNullValues()
+    {
+        var empty = EmptyRules();
+        Assert.Empty(CollectorObservableMetrics.ServerRuleRates(empty));
+        Assert.Empty(CollectorObservableMetrics.ServerRuleEnabled(empty));
+
+        var rules = new PublicServerRules(
+            "Custom", 2, 1.5, null, null, null, null, "Item",
+            null, null, null, null, null, null, null, null,
+            null, null, null, null, null, null, null, null, null,
+            false, true, null, null, null, null, null, null);
+
+        var rates = CollectorObservableMetrics.ServerRuleRates(rules).ToArray();
+        Assert.Contains(rates, m => TagEquals(m, "rule", "experience") && m.Value == 2);
+        Assert.Contains(rates, m => TagEquals(m, "rule", "pal_capture") && m.Value == 1.5);
+        Assert.DoesNotContain(rates, m => TagEquals(m, "rule", "pal_spawn"));
+
+        var flags = CollectorObservableMetrics.ServerRuleEnabled(rules).ToArray();
+        Assert.Contains(flags, m => TagEquals(m, "rule", "hardcore") && m.Value == 0);
+        Assert.Contains(flags, m => TagEquals(m, "rule", "fast_travel") && m.Value == 1);
+        Assert.DoesNotContain(flags, m => TagEquals(m, "rule", "voice_chat"));
+    }
+
+    [Fact]
+    public async Task SnapshotMetricsExposeGuildServerAndInGameTimeAggregates()
+    {
+        var (service, _, _) = CreateCollectorService();
+
+        await service.ReportPlayerLocations(new PlayerListResponse
+        {
+            Players =
+            [
+                new PalworldPlayer
+                {
+                    Name = "One",
+                    PlayerId = "player-1",
+                    UserId = "user-1",
+                    Ping = 10,
+                    Level = 5,
+                    BuildingCount = 2,
+                    LocationX = 12_500,
+                    LocationY = -4_200
+                }
+            ]
+        });
+        var revision = service.CaptureWorldRevision();
+        await service.ReportGameData(
+            new WorldActorSnapshotResponse
+            {
+                Time = "2026-07-21 12:00",
+                Fps = 60,
+                AverageFps = 55,
+                InGameDays = 9,
+                InGameTime = JsonDocument.Parse("\"14:30\"").RootElement.Clone(),
+                ActorData =
+                [
+                    new WorldActor { Type = "PalBox", GuildId = "guild-a", GuildName = "Guild Alpha", LocationX = 12_000, LocationY = -4_000, LocationZ = 0 },
+                    new WorldActor { Type = "Character", UnitType = "Player", UserId = "user-1", GuildId = "guild-a", GuildName = "Guild Alpha" },
+                    new WorldActor
+                    {
+                        Type = "Character",
+                        UnitType = "BaseCampPal",
+                        GuildId = "guild-a",
+                        Level = 4,
+                        HitPoints = 20,
+                        MaxHitPoints = 40,
+                        LocationX = 12_010,
+                        LocationY = -3_990
+                    }
+                ]
+            },
+            requestedRevision: revision);
+        await service.ReportServerSettings(new ServerSettingsResponse
+        {
+            ServerName = "Synthetic",
+            ServerDescription = "Test",
+            ServerPlayerMaxNum = 32,
+            BaseCampWorkerMaxNum = 15,
+            DayTimeSpeedRate = 1.5,
+            NightTimeSpeedRate = 0.5,
+            ExpRate = 2,
+            PalCaptureRate = 1.25,
+            DeathPenalty = "Item",
+            Hardcore = false,
+            EnableFastTravel = true,
+            EnableVoiceChat = false
+        });
+
+        var snapshot = service.GetMetricsSnapshot();
+
+        Assert.NotNull(snapshot.Players);
+        Assert.Single(snapshot.Players);
+        Assert.NotNull(snapshot.World);
+        Assert.Equal("14:30", snapshot.World.Stats.InGameTime);
+        Assert.True(CollectorObservableMetrics.TryParseInGameTimeMinutes(snapshot.World.Stats.InGameTime, out var minutes));
+        Assert.Equal(870, minutes);
+        var guild = Assert.Single(snapshot.World.Guilds);
+        Assert.Equal("Guild Alpha", guild.Name);
+        Assert.Equal(1, guild.BaseCount);
+        Assert.Equal(1, guild.BasePalCount);
+        Assert.Equal(1, guild.OnlinePlayerCount);
+        Assert.Equal(1, snapshot.World.Guilds.Sum(g => g.BaseCount));
+
+        Assert.NotNull(snapshot.Server);
+        Assert.Equal(32, snapshot.Server.MaxPlayers);
+        Assert.Equal(15, snapshot.Server.MaxPalsPerBase);
+        Assert.Equal(1.5, snapshot.Server.DayTimeSpeedRate);
+        Assert.Equal(0.5, snapshot.Server.NightTimeSpeedRate);
+        Assert.Equal(2, snapshot.Server.Rules.ExperienceRate);
+        Assert.Equal(1.25, snapshot.Server.Rules.PalCaptureRate);
+        Assert.Equal("Item", snapshot.Server.Rules.DeathPenalty);
+        Assert.False(snapshot.Server.Rules.HardcoreEnabled);
+        Assert.True(snapshot.Server.Rules.FastTravelEnabled);
+        Assert.False(snapshot.Server.Rules.VoiceChatEnabled);
+
+        var rates = CollectorObservableMetrics.ServerRuleRates(snapshot.Server.Rules).ToArray();
+        Assert.Contains(rates, m => TagEquals(m, "rule", "experience") && m.Value == 2);
+        var flags = CollectorObservableMetrics.ServerRuleEnabled(snapshot.Server.Rules).ToArray();
+        Assert.Contains(flags, m => TagEquals(m, "rule", "fast_travel") && m.Value == 1);
+    }
+
+    [Fact]
+    public void EmptySnapshotSectionsYieldNoWorldOrServerAggregates()
+    {
+        var empty = new CollectorMetricsSnapshot(
+            Sequence: 0,
+            StageRefreshPendingCount: 0,
+            PlayersStatus: new SourceStatus(SnapshotSourceState.Pending, false, null, null),
+            WorldStatus: new SourceStatus(SnapshotSourceState.Pending, false, null, null),
+            ServerStatus: new SourceStatus(SnapshotSourceState.Pending, false, null, null),
+            Players: null,
+            World: null,
+            Server: null);
+
+        Assert.Null(empty.Players);
+        Assert.Null(empty.World);
+        Assert.Null(empty.Server);
+        Assert.Empty(CollectorObservableMetrics.ServerRuleRates(EmptyRules()));
+        Assert.Empty(CollectorObservableMetrics.ServerRuleEnabled(EmptyRules()));
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.Accepted, "accepted")]
     [InlineData(HttpStatusCode.BadRequest, "rejected")]
     [InlineData(HttpStatusCode.InternalServerError, "retry")]
@@ -255,6 +420,16 @@ public sealed class PrometheusExporterTests
         ClientSecret = ValidClientSecret,
         PrivacyKey = Convert.ToBase64String(Enumerable.Range(0, 32).Select(value => (byte)value).ToArray())
     };
+
+    private static PublicServerRules EmptyRules() => new(
+        null, null, null, null, null, null, null, null,
+        null, null, null, null, null, null, null, null,
+        null, null, null, null, null, null, null, null, null,
+        null, null, null, null, null, null, null, null);
+
+    private static bool TagEquals<T>(Measurement<T> measurement, string key, string expected)
+        where T : struct =>
+        measurement.Tags.ToArray().Any(tag => tag.Key == key && Equals(tag.Value, expected));
 
     private sealed class NoOpHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
