@@ -16,6 +16,11 @@ internal sealed class PalmapIngestSettingsValidator(IHostEnvironment environment
 
     public ValidateOptionsResult Validate(string? name, PalmapIngestSettings settings)
     {
+        if (!settings.Enabled)
+        {
+            return ValidateOptionsResult.Success;
+        }
+
         var errors = new List<string>();
         if (!Uri.TryCreate(settings.Endpoint, UriKind.Absolute, out var endpoint) ||
             endpoint.Scheme != Uri.UriSchemeHttp && endpoint.Scheme != Uri.UriSchemeHttps)

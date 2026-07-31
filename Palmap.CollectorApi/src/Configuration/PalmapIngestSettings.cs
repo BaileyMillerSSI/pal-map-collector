@@ -9,16 +9,15 @@ internal sealed record PalmapIngestSettings
     public const string SnapshotV1Path = "/api/ingest/v1/snapshots";
     public const string DefaultEndpoint = PalmapIngress.DefaultBaseUrl + SnapshotV1Path;
 
+    public bool Enabled { get; init; } = true;
+
     [Required]
     public string? Endpoint { get; init; } = DefaultEndpoint;
 
-    [Required]
     public string? ClientId { get; init; }
 
-    [Required]
     public string? ClientSecret { get; init; }
 
-    [Required]
     public string? PrivacyKey { get; init; }
 
     public bool AllowInsecureHttp { get; init; }
