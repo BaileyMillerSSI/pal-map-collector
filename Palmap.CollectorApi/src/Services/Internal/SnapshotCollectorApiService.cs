@@ -127,7 +127,9 @@ internal sealed class SnapshotCollectorApiService(
                 _serverSlot.Status(_server is not null),
                 composition.Players,
                 composition.World,
-                _server);
+                _server,
+                _world?.GuildRuntime,
+                _world?.WorldRuntime);
         }
     }
 
