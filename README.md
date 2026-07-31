@@ -90,10 +90,11 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `PalworldApi:BaseUrl` | `http://localhost:8212` | Palworld REST origin, including TCP port 8212 |
 | `PalworldApi:Admin:Username` | `admin` | Palworld's REST Basic-auth username |
 | `PalworldApi:Admin:Password` | none | REST admin password; required at startup |
+| `PalmapIngest:Enabled` | `true` | When `false`, skip Pal-Map snapshot delivery and ingest credential requirements; Palworld polling and optional Prometheus continue |
 | `PalmapIngest:Endpoint` | `https://pal-map.com/api/ingest/v1/snapshots` | Hosted Pal-Map snapshot v1 ingest URL; override only for explicit local Development testing |
-| `PalmapIngest:ClientId` | none | Issued 20-to-64-character Server/Client ID: `pmc_` plus 16 to 60 base64url characters |
-| `PalmapIngest:ClientSecret` | none | Issued base64url client secret used for HTTP Basic authentication |
-| `PalmapIngest:PrivacyKey` | none | Unique 32-byte key encoded as base64; used only to derive opaque identifiers |
+| `PalmapIngest:ClientId` | none | Issued 20-to-64-character Server/Client ID: `pmc_` plus 16 to 60 base64url characters; required when ingest is enabled |
+| `PalmapIngest:ClientSecret` | none | Issued base64url client secret used for HTTP Basic authentication; required when ingest is enabled |
+| `PalmapIngest:PrivacyKey` | none | Unique 32-byte key encoded as base64; used only to derive opaque identifiers; required when ingest is enabled (ephemeral process key when ingest is disabled and unset) |
 | `PalmapIngest:AllowInsecureHttp` | `false` | Permit an endpoint override only when the process also runs in `Development` |
 | `PalmapIngest:RequestTimeoutMs` | `20000` | Timeout for one ingest request |
 | `PalmapIngest:MaximumDeliveryAttempts` | `5` | Bounded attempts for one stable snapshot body |
@@ -109,7 +110,7 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `PrometheusExporter:Port` | `9090` | Dedicated scrape listen port (separate from health on 8080) |
 | `PrometheusExporter:SampleIntervalMs` | `15000` | How often Palworld `/v1/api/metrics` is sampled into gauges |
 
-Endpoint overrides must be absolute HTTP or HTTPS URLs and cannot contain user information, a query, or a fragment. Any value other than the hosted default requires both the `Development` environment and `PalmapIngest:AllowInsecureHttp=true`, even when the override itself uses HTTPS. All intervals must be between 1 and `2147483647` milliseconds. The Palworld password, Pal-Map client secret, and privacy key have no real checked-in defaults; missing or malformed configuration stops the process during startup with an options-validation error.
+Endpoint overrides must be absolute HTTP or HTTPS URLs and cannot contain user information, a query, or a fragment. Any value other than the hosted default requires both the `Development` environment and `PalmapIngest:AllowInsecureHttp=true`, even when the override itself uses HTTPS. All intervals must be between 1 and `2147483647` milliseconds. When `PalmapIngest:Enabled` is `true` (the default), the Palworld password, Pal-Map client secret, and privacy key have no real checked-in defaults; missing or malformed configuration stops the process during startup with an options-validation error. When ingest is disabled, ClientId, ClientSecret, and PrivacyKey are optional; if PrivacyKey is unset, the collector uses an ephemeral in-process key for opaque identifiers (unstable across restarts).
 
 When `PrometheusExporter:Enabled` is `true`, the process also listens for Prometheus scrapes on `http://{Host}:{Port}/metrics` (OpenTelemetry HttpListener). The sample Compose stack publishes that port on loopback as `127.0.0.1:9090`. Keep the scrape endpoint private the same way as `/health/*`; it is not authenticated. Sampling of Palworld `/v1/api/metrics` uses `SampleIntervalMs` and the shared Palworld health gate. Snapshot-derived and collector self-metrics are observed from in-memory state without extra `game-data` polls.
 

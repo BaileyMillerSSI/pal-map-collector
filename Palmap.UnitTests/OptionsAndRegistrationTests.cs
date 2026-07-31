@@ -9,6 +9,8 @@ using Palmap.Collector.Services;
 using Palmap.Collector.Metrics;
 using Palmap.CollectorApi;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Services;
+using Palmap.CollectorApi.Services.Internal;
 using Palmap.PalworldApi;
 using Palmap.PalworldApi.Configuration;
 using Palmap.PalworldApi.Services;
@@ -129,5 +131,32 @@ public sealed class OptionsAndRegistrationTests
             descriptor => descriptor.ServiceType == typeof(PalworldMetricsCache));
         Assert.NotNull(builder.Services.BuildServiceProvider()
             .GetRequiredService<IOptions<PrometheusExporterSettings>>().Value);
+    }
+
+    [Fact]
+    public void DisabledPalmapIngestSkipsDeliveryAndCredentialRequirements()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["PalmapIngest:Enabled"] = "false";
+        builder.AddCollectorApi();
+
+        Assert.DoesNotContain(
+            builder.Services,
+            descriptor => descriptor.ImplementationType == typeof(SnapshotDeliveryService));
+        using var host = builder.Build();
+        Assert.IsType<SnapshotCollectorApiService>(host.Services.GetRequiredService<ICollectorApiService>());
+        Assert.False(host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value.Enabled);
+    }
+
+    [Fact]
+    public void EnabledPalmapIngestRequiresCredentials()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["PalmapIngest:Enabled"] = "true";
+        builder.AddCollectorApi();
+        using var host = builder.Build();
+
+        Assert.Throws<OptionsValidationException>(() =>
+            _ = host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value);
     }
 }

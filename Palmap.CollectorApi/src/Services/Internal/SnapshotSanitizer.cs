@@ -15,6 +15,7 @@ namespace Palmap.CollectorApi.Services.Internal;
 internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> settings)
 {
     private static ReadOnlySpan<byte> OpaqueIdContext => "palworld-map:opaque-id:v1"u8;
+    private byte[]? _ephemeralPrivacyKey;
 
     public IReadOnlyList<SanitizedPlayer> Players(PlayerListResponse response)
     {
@@ -280,8 +281,21 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
             publicWorld);
     }
 
-    private byte[] PrivacyKey() =>
-        PalmapIngestSettingsValidator.DecodePrivacyKey(settings.CurrentValue.PrivacyKey!);
+    private byte[] PrivacyKey()
+    {
+        var configured = settings.CurrentValue.PrivacyKey;
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return PalmapIngestSettingsValidator.DecodePrivacyKey(configured);
+        }
+
+        if (!settings.CurrentValue.Enabled)
+        {
+            return _ephemeralPrivacyKey ??= RandomNumberGenerator.GetBytes(32);
+        }
+
+        return PalmapIngestSettingsValidator.DecodePrivacyKey(configured!);
+    }
 
     private static string Opaque(byte[] privacyKey, OpaqueIdKind kind, string rawId)
     {

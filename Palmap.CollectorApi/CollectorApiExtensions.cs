@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -36,9 +37,15 @@ public static class CollectorApiExtensions
             services.GetRequiredService<SnapshotCollectorApiService>());
         builder.Services.AddSingleton<ICollectorMetricsSnapshotSource>(services =>
             services.GetRequiredService<SnapshotCollectorApiService>());
-        builder.Services.AddHttpClient(SnapshotDeliveryService.HttpClientName, client =>
-            client.Timeout = Timeout.InfiniteTimeSpan);
-        builder.Services.AddHostedService<SnapshotDeliveryService>();
+
+        if (builder.Configuration.GetSection(PalmapIngestSettings.SectionName)
+            .GetValue(nameof(PalmapIngestSettings.Enabled), true))
+        {
+            builder.Services.AddHttpClient(SnapshotDeliveryService.HttpClientName, client =>
+                client.Timeout = Timeout.InfiniteTimeSpan);
+            builder.Services.AddHostedService<SnapshotDeliveryService>();
+        }
+
         return builder;
     }
 }
