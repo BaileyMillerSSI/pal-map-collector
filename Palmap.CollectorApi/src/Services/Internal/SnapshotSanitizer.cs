@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Services;
 using Palmap.PalworldApi.Models;
 using Palmap.Protocol;
 
@@ -15,6 +16,7 @@ namespace Palmap.CollectorApi.Services.Internal;
 internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> settings)
 {
     private static ReadOnlySpan<byte> OpaqueIdContext => "palworld-map:opaque-id:v1"u8;
+    private byte[]? _ephemeralPrivacyKey;
 
     public IReadOnlyList<SanitizedPlayer> Players(PlayerListResponse response)
     {
@@ -60,8 +62,11 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
         {
             var playersByUser = new Dictionary<string, SanitizedPlayerContext>(StringComparer.Ordinal);
             var guilds = new Dictionary<string, GuildAccumulator>(StringComparer.Ordinal);
+            var guildRuntime = new Dictionary<string, GuildRuntimeAccumulator>(StringComparer.Ordinal);
             var guildPals = new Dictionary<string, List<WorldActor>>(StringComparer.Ordinal);
+            var companions = new List<WorldActor>();
             var counts = new ActorCountAccumulator();
+            var worldRuntime = new WorldRuntimeAccumulator();
 
             GuildAccumulator GuildFor(string rawId, string? name)
             {
@@ -72,10 +77,12 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
                         Opaque(privacyKey, OpaqueIdKind.Guild, rawId),
                         cleanedName);
                     guilds.Add(rawId, guild);
+                    guildRuntime.Add(rawId, new GuildRuntimeAccumulator(guild.Id, cleanedName));
                 }
                 else if (guild.Name == "Unknown guild" && cleanedName != "Unknown guild")
                 {
                     guild.Name = cleanedName;
+                    guildRuntime[rawId].GuildName = cleanedName;
                 }
 
                 return guild;
@@ -105,17 +112,22 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
                 }
 
                 counts.Add(actor.UnitType);
-                if (actor.UnitType == "Player" && !string.IsNullOrWhiteSpace(actor.UserId))
+                if (actor.UnitType == "Player")
                 {
-                    var guildId = string.IsNullOrWhiteSpace(actor.GuildId)
-                        ? null
-                        : GuildFor(actor.GuildId, actor.GuildName).Id;
-                    playersByUser[Opaque(privacyKey, OpaqueIdKind.UserCorrelation, actor.UserId)] =
-                        new(guildId, MapProjection.IsInstancedStage(actor.Stage));
+                    worldRuntime.AddPlayer(actor);
+                    if (!string.IsNullOrWhiteSpace(actor.UserId))
+                    {
+                        var guildId = string.IsNullOrWhiteSpace(actor.GuildId)
+                            ? null
+                            : GuildFor(actor.GuildId, actor.GuildName).Id;
+                        playersByUser[Opaque(privacyKey, OpaqueIdKind.UserCorrelation, actor.UserId)] =
+                            new(guildId, MapProjection.IsInstancedStage(actor.Stage));
+                    }
                 }
                 else if (actor.UnitType == "BaseCampPal" && !string.IsNullOrWhiteSpace(actor.GuildId))
                 {
                     GuildFor(actor.GuildId, actor.GuildName).Add(actor);
+                    guildRuntime[actor.GuildId].AddBasePal(actor);
                     if (!guildPals.TryGetValue(actor.GuildId, out var pals))
                     {
                         pals = [];
@@ -123,6 +135,24 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
                     }
 
                     pals.Add(actor);
+                }
+                else if (actor.UnitType == "OtomoPal")
+                {
+                    worldRuntime.AddCompanion(actor);
+                    companions.Add(actor);
+                }
+                else if (actor.UnitType == "WildPal")
+                {
+                    worldRuntime.AddWildPal(actor);
+                }
+            }
+
+            foreach (var companion in companions)
+            {
+                if (!string.IsNullOrWhiteSpace(companion.GuildId) &&
+                    guildRuntime.TryGetValue(companion.GuildId, out var runtime))
+                {
+                    runtime.AddCompanion(companion);
                 }
             }
 
@@ -137,6 +167,11 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
             var projectedGuilds = guilds.Select(pair => pair.Value.ToSanitized(pair.Key, privacyKey))
                 .OrderBy(guild => guild.Name, StringComparer.Ordinal)
                 .ThenBy(guild => guild.Id, StringComparer.Ordinal)
+                .ToArray();
+            var projectedGuildRuntime = guildRuntime.Values
+                .Select(value => value.ToPublic())
+                .OrderBy(guild => guild.GuildName, StringComparer.Ordinal)
+                .ThenBy(guild => guild.GuildId, StringComparer.Ordinal)
                 .ToArray();
             var inGameDays = response.InGameDays is { } days &&
                 double.IsFinite(days) && days is >= 0 and <= int.MaxValue
@@ -155,7 +190,9 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
                     inGameTime,
                     counts.ToPublic()),
                 playersByUser,
-                Array.AsReadOnly(projectedGuilds));
+                Array.AsReadOnly(projectedGuilds),
+                Array.AsReadOnly(projectedGuildRuntime),
+                worldRuntime.ToPublic());
         }
         finally
         {
@@ -280,8 +317,21 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
             publicWorld);
     }
 
-    private byte[] PrivacyKey() =>
-        PalmapIngestSettingsValidator.DecodePrivacyKey(settings.CurrentValue.PrivacyKey!);
+    private byte[] PrivacyKey()
+    {
+        var configured = settings.CurrentValue.PrivacyKey;
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return PalmapIngestSettingsValidator.DecodePrivacyKey(configured);
+        }
+
+        if (!settings.CurrentValue.Enabled)
+        {
+            return _ephemeralPrivacyKey ??= RandomNumberGenerator.GetBytes(32);
+        }
+
+        return PalmapIngestSettingsValidator.DecodePrivacyKey(configured!);
+    }
 
     private static string Opaque(byte[] privacyKey, OpaqueIdKind kind, string rawId)
     {
@@ -496,6 +546,169 @@ internal sealed class SnapshotSanitizer(IOptionsMonitor<PalmapIngestSettings> se
             guild.EstimatedPower,
             guild.Bases);
     }
+
+    private sealed class GuildRuntimeAccumulator(string guildId, string guildName)
+    {
+        public string GuildId { get; } = guildId;
+        public string GuildName { get; set; } = guildName;
+        public int InjuredBasePals { get; private set; }
+        public double HpDeficit { get; private set; }
+        public long BasePalLevelMax { get; private set; }
+        public double BasePalEstimatedPowerMax { get; private set; }
+        public int InactiveBasePals { get; private set; }
+        public int ActiveBasePals { get; private set; }
+        public int CompanionPals { get; private set; }
+        public long CompanionLevelMax { get; private set; }
+        public double CompanionEstimatedPowerMax { get; private set; }
+
+        public void AddBasePal(WorldActor actor)
+        {
+            AddInjury(actor, isBasePal: true);
+            AddActivity(actor);
+            if (actor.Level is >= 0)
+            {
+                BasePalLevelMax = Math.Max(BasePalLevelMax, actor.Level.Value);
+            }
+
+            if (TryEstimatedPower(actor, out var power))
+            {
+                BasePalEstimatedPowerMax = Math.Max(BasePalEstimatedPowerMax, power);
+            }
+        }
+
+        public void AddCompanion(WorldActor actor)
+        {
+            CompanionPals++;
+            if (actor.Level is >= 0)
+            {
+                CompanionLevelMax = Math.Max(CompanionLevelMax, actor.Level.Value);
+            }
+
+            if (TryEstimatedPower(actor, out var power))
+            {
+                CompanionEstimatedPowerMax = Math.Max(CompanionEstimatedPowerMax, power);
+            }
+        }
+
+        private void AddInjury(WorldActor actor, bool isBasePal)
+        {
+            if (actor.HitPoints is not >= 0 || actor.MaxHitPoints is not >= 0)
+            {
+                return;
+            }
+
+            if (actor.HitPoints.Value < actor.MaxHitPoints.Value)
+            {
+                if (isBasePal)
+                {
+                    InjuredBasePals++;
+                }
+
+                HpDeficit += actor.MaxHitPoints.Value - actor.HitPoints.Value;
+            }
+        }
+
+        private void AddActivity(WorldActor actor)
+        {
+            if (string.Equals(actor.IsActive, "false", StringComparison.OrdinalIgnoreCase))
+            {
+                InactiveBasePals++;
+            }
+            else if (string.Equals(actor.IsActive, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                ActiveBasePals++;
+            }
+        }
+
+        public GuildRuntimeMetrics ToPublic() => new(
+            GuildId,
+            GuildName,
+            InjuredBasePals,
+            HpDeficit,
+            BasePalLevelMax,
+            BasePalEstimatedPowerMax,
+            InactiveBasePals,
+            ActiveBasePals,
+            CompanionPals,
+            CompanionLevelMax,
+            CompanionEstimatedPowerMax);
+    }
+
+    private sealed class WorldRuntimeAccumulator
+    {
+        private int _companionCount;
+        private long _companionLevelSum;
+        public long CompanionLevelMax { get; private set; }
+        public double CompanionEstimatedPowerMax { get; private set; }
+        public double PlayerHpCurrent { get; private set; }
+        public double PlayerHpMax { get; private set; }
+        public int InjuredPlayers { get; private set; }
+        public long WildPalLevelMax { get; private set; }
+
+        public void AddCompanion(WorldActor actor)
+        {
+            _companionCount++;
+            if (actor.Level is >= 0)
+            {
+                _companionLevelSum += actor.Level.Value;
+                CompanionLevelMax = Math.Max(CompanionLevelMax, actor.Level.Value);
+            }
+
+            if (TryEstimatedPower(actor, out var power))
+            {
+                CompanionEstimatedPowerMax = Math.Max(CompanionEstimatedPowerMax, power);
+            }
+        }
+
+        public void AddPlayer(WorldActor actor)
+        {
+            if (actor.HitPoints is >= 0)
+            {
+                PlayerHpCurrent += actor.HitPoints.Value;
+            }
+
+            if (actor.MaxHitPoints is >= 0)
+            {
+                PlayerHpMax += actor.MaxHitPoints.Value;
+            }
+
+            if (actor.HitPoints is >= 0 &&
+                actor.MaxHitPoints is >= 0 &&
+                actor.HitPoints.Value < actor.MaxHitPoints.Value)
+            {
+                InjuredPlayers++;
+            }
+        }
+
+        public void AddWildPal(WorldActor actor)
+        {
+            if (actor.Level is >= 0)
+            {
+                WildPalLevelMax = Math.Max(WildPalLevelMax, actor.Level.Value);
+            }
+        }
+
+        public WorldRuntimeMetrics ToPublic() => new(
+            _companionCount > 0 ? (double)_companionLevelSum / _companionCount : 0,
+            CompanionLevelMax,
+            CompanionEstimatedPowerMax,
+            PlayerHpCurrent,
+            PlayerHpMax,
+            InjuredPlayers,
+            WildPalLevelMax);
+    }
+
+    private static bool TryEstimatedPower(WorldActor actor, out double power)
+    {
+        if (actor.Level is >= 0 && actor.HitPoints is >= 0)
+        {
+            power = (double)actor.Level.Value * actor.HitPoints.Value;
+            return true;
+        }
+
+        power = 0;
+        return false;
+    }
 }
 
 internal static class MapProjection
@@ -547,7 +760,9 @@ internal sealed record SanitizedGuild(
 internal sealed record SanitizedWorld(
     PublicWorldStats Stats,
     IReadOnlyDictionary<string, SanitizedPlayerContext> PlayersByUserId,
-    IReadOnlyList<SanitizedGuild> Guilds);
+    IReadOnlyList<SanitizedGuild> Guilds,
+    IReadOnlyList<GuildRuntimeMetrics> GuildRuntime,
+    WorldRuntimeMetrics WorldRuntime);
 internal sealed record SanitizedComposition(
     IReadOnlyList<PublicPlayer>? Players,
     PublicWorldData? World);

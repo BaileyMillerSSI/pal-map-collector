@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Palmap.Collector.Health;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services;
 using Palmap.PalworldApi.Services;
 
@@ -12,14 +13,17 @@ internal sealed class GameServerSettingsReportTimedBackgroundService(
     IOptionsMonitor<CollectorSettings> collectorSettings,
     IPalworldApiHealthService palworldHealthService,
     ICollectorDelay collectorDelay,
+    ICollectorMetricService collectorMetrics,
     ILogger<GameServerSettingsReportTimedBackgroundService> logger)
-    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, logger)
+    : TimedReporterBackgroundService(palworldHealthService, collectorDelay, collectorMetrics, logger)
 {
     protected override int ReportIntervalMs => collectorSettings.CurrentValue.ServerSettingsUpdateIntervalMs;
 
     protected override int FailureRetryIntervalMs => collectorSettings.CurrentValue.FailureRetryIntervalMs;
 
     protected override string ReportDescription => "server settings";
+
+    protected override string MetricsSource => "settings";
 
     internal override async Task ReportOnce(CancellationToken cancellationToken)
     {

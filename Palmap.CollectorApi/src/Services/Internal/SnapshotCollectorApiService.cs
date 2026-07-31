@@ -13,7 +13,7 @@ internal sealed class SnapshotCollectorApiService(
     GameDataRefreshSignal gameDataRefreshSignal,
     IOptionsMonitor<CollectorSettings> collectorSettings,
     TimeProvider timeProvider,
-    ILogger<SnapshotCollectorApiService> logger) : ICollectorApiService
+    ILogger<SnapshotCollectorApiService> logger) : ICollectorApiService, ICollectorMetricsSnapshotSource
 {
     private readonly object _gate = new();
     private readonly Guid _collectorEpoch = Guid.NewGuid();
@@ -27,6 +27,7 @@ internal sealed class SnapshotCollectorApiService(
     private HashSet<string> _stageRefreshPending = [];
     private long _stageRevision;
     private long _sequence;
+    private long _publishedSequence;
 
     public Task ReportPlayerLocations(PlayerListResponse players, CancellationToken cancellationToken = default)
     {
@@ -113,6 +114,25 @@ internal sealed class SnapshotCollectorApiService(
         return Task.CompletedTask;
     }
 
+    public CollectorMetricsSnapshot GetMetricsSnapshot()
+    {
+        lock (_gate)
+        {
+            var composition = sanitizer.Compose(_players, _world, _stageRefreshPending);
+            return new CollectorMetricsSnapshot(
+                _publishedSequence,
+                _stageRefreshPending.Count,
+                _playersSlot.Status(_players is not null),
+                _worldSlot.Status(_world is not null),
+                _serverSlot.Status(_server is not null),
+                composition.Players,
+                composition.World,
+                _server,
+                _world?.GuildRuntime,
+                _world?.WorldRuntime);
+        }
+    }
+
     public Task ReportFailure(
         CollectorSourceSection section,
         CollectorSourceFailure failure,
@@ -193,12 +213,14 @@ internal sealed class SnapshotCollectorApiService(
     private SnapshotEnvelopeV1 CreateEnvelope(DateTimeOffset now)
     {
         var composition = sanitizer.Compose(_players, _world, _stageRefreshPending);
+        var sequence = _sequence++;
+        _publishedSequence = sequence;
         return new SnapshotEnvelopeV1(
             SnapshotSchemaVersions.V1,
             typeof(SnapshotCollectorApiService).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
             now,
             _collectorEpoch,
-            _sequence++,
+            sequence,
             new LiveSnapshotV1(
                 new SnapshotSection<IReadOnlyList<PublicPlayer>>(
                     _playersSlot.Status(_players is not null),

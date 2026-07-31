@@ -41,6 +41,7 @@ After both services are healthy:
 ```powershell
 Invoke-WebRequest http://127.0.0.1:8080/health/live
 Invoke-WebRequest http://127.0.0.1:8080/health/ready
+Invoke-WebRequest http://127.0.0.1:9090/metrics
 ```
 
 Stop the stack with:
@@ -49,7 +50,7 @@ Stop the stack with:
 docker compose down
 ```
 
-World data remains in `./palworld`. REST port 8212 and the collector port are bound to host loopback only. Do not publicly expose the Palworld REST API: its credentials grant administrative access.
+World data remains in `./palworld`. REST port 8212, the collector health port, and the optional Prometheus scrape port are bound to host loopback only. Do not publicly expose the Palworld REST API: its credentials grant administrative access. Do not publicly expose `/metrics` either; it is unauthenticated.
 
 ### Use the published collector image
 
@@ -89,10 +90,11 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `PalworldApi:BaseUrl` | `http://localhost:8212` | Palworld REST origin, including TCP port 8212 |
 | `PalworldApi:Admin:Username` | `admin` | Palworld's REST Basic-auth username |
 | `PalworldApi:Admin:Password` | none | REST admin password; required at startup |
+| `PalmapIngest:Enabled` | `true` | When `false`, skip Pal-Map snapshot delivery and ingest credential requirements; Palworld polling and optional Prometheus continue |
 | `PalmapIngest:Endpoint` | `https://pal-map.com/api/ingest/v1/snapshots` | Hosted Pal-Map snapshot v1 ingest URL; override only for explicit local Development testing |
-| `PalmapIngest:ClientId` | none | Issued 20-to-64-character Server/Client ID: `pmc_` plus 16 to 60 base64url characters |
-| `PalmapIngest:ClientSecret` | none | Issued base64url client secret used for HTTP Basic authentication |
-| `PalmapIngest:PrivacyKey` | none | Unique 32-byte key encoded as base64; used only to derive opaque identifiers |
+| `PalmapIngest:ClientId` | none | Issued 20-to-64-character Server/Client ID: `pmc_` plus 16 to 60 base64url characters; required when ingest is enabled |
+| `PalmapIngest:ClientSecret` | none | Issued base64url client secret used for HTTP Basic authentication; required when ingest is enabled |
+| `PalmapIngest:PrivacyKey` | none | Unique 32-byte key encoded as base64; used only to derive opaque identifiers; required when ingest is enabled (ephemeral process key when ingest is disabled and unset) |
 | `PalmapIngest:AllowInsecureHttp` | `false` | Permit an endpoint override only when the process also runs in `Development` |
 | `PalmapIngest:RequestTimeoutMs` | `20000` | Timeout for one ingest request |
 | `PalmapIngest:MaximumDeliveryAttempts` | `5` | Bounded attempts for one stable snapshot body |
@@ -103,8 +105,20 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | `Collector:ServerSettingsUpdateIntervalMs` | `3600000` | Server settings polling period |
 | `Collector:FailureRetryIntervalMs` | `5000` | Retry period after an unavailable server or failed report |
 | `Collector:PalworldHealthCacheDurationMs` | `5000` | Shared health-probe cache duration |
+| `PrometheusExporter:Enabled` | `false` | Opt-in OpenTelemetry Prometheus HttpListener scrape endpoint |
+| `PrometheusExporter:Host` | `+` | HttpListener bind host (`+` listens on all interfaces inside the container) |
+| `PrometheusExporter:Port` | `9090` | Dedicated scrape listen port (separate from health on 8080) |
+| `PrometheusExporter:SampleIntervalMs` | `15000` | How often Palworld `/v1/api/metrics` is sampled into gauges |
 
-Endpoint overrides must be absolute HTTP or HTTPS URLs and cannot contain user information, a query, or a fragment. Any value other than the hosted default requires both the `Development` environment and `PalmapIngest:AllowInsecureHttp=true`, even when the override itself uses HTTPS. All intervals must be between 1 and `2147483647` milliseconds. The Palworld password, Pal-Map client secret, and privacy key have no real checked-in defaults; missing or malformed configuration stops the process during startup with an options-validation error.
+Endpoint overrides must be absolute HTTP or HTTPS URLs and cannot contain user information, a query, or a fragment. Any value other than the hosted default requires both the `Development` environment and `PalmapIngest:AllowInsecureHttp=true`, even when the override itself uses HTTPS. All intervals must be between 1 and `2147483647` milliseconds. When `PalmapIngest:Enabled` is `true` (the default), the Palworld password, Pal-Map client secret, and privacy key have no real checked-in defaults; missing or malformed configuration stops the process during startup with an options-validation error. When ingest is disabled, ClientId, ClientSecret, and PrivacyKey are optional; if PrivacyKey is unset, the collector uses an ephemeral in-process key for opaque identifiers (unstable across restarts).
+
+When `PrometheusExporter:Enabled` is `true`, the process also listens for Prometheus scrapes on `http://{Host}:{Port}/metrics` (OpenTelemetry HttpListener). The sample Compose stack publishes that port on loopback as `127.0.0.1:9090`. Keep the scrape endpoint private the same way as `/health/*`; it is not authenticated. Sampling of Palworld `/v1/api/metrics` uses `SampleIntervalMs` and the shared Palworld health gate. Snapshot-derived and collector self-metrics are observed from in-memory state without extra `game-data` polls.
+
+Exported families include REST `/metrics` gauges (`palworld_server_fps`, players online/max, uptime, base camps, world days), snapshot aggregates (`palworld_actors`, player ping/level, location kinds, players by map layer, guild membership counts), guild/base stats (`palworld_guild_*`, base rollups such as `palworld_guild_base_estimated_power_max`, `palworld_bases_total`, `palworld_players_snapshot`, in-game time minutes), guild runtime workforce/strength (`palworld_guild_injured_base_pals`, `palworld_guild_hp_deficit`, `palworld_guild_base_pal_level_max`, active/inactive base pals, companion max level/power), world runtime (`palworld_companion_level_*`, `palworld_player_hp`, `palworld_injured_players`, `palworld_wild_pal_level_max`), server rules (`palworld_server_configured_max_players`, `palworld_server_rule_rate`, `palworld_server_rule_enabled`, death-penalty info), and collector health (`palmap_*`). Guild series carry `guild_id` and `guild_name` labels suitable for a single-server scrape. The REST API does not expose cumulative damage taken, pals caught, or career leaderboards; those are not exported. Per-player and per-base labeled series are intentionally omitted for privacy and cardinality.
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:9090/metrics
+```
 
 Reporter loops update retained sanitized state without waiting for network delivery. The delivery worker sends one stable serialized envelope per attempt sequence, honors bounded `Retry-After` values, and retains only the latest pending snapshot during outages. Authentication and protocol-compatibility failures stop the collector; rejected payloads and exhausted transient retries move on to the latest available state. Raw player, account, platform, network, and Palworld error data are neither included in the public contract nor written to delivery logs.
 
@@ -158,9 +172,9 @@ dotnet test Palmap.IntegrationTests
 docker compose down
 ```
 
-Optional integration-test overrides are `PALMAP_PALWORLD_URL` (default `http://127.0.0.1:8212`) and `PALMAP_COLLECTOR_URL` (default `http://127.0.0.1:8080`).
+Optional integration-test overrides are `PALMAP_PALWORLD_URL` (default `http://127.0.0.1:8212`), `PALMAP_COLLECTOR_URL` (default `http://127.0.0.1:8080`), and `PALMAP_METRICS_URL` (default `http://127.0.0.1:9090`). The sample `config/collector.env.example` enables the Prometheus exporter so the live suite can scrape `/metrics`.
 
-The live suite checks server info, players, settings, world actor data, metrics, rejected credentials, and both collector health endpoints.
+The live suite checks server info, players, settings, world actor data, metrics, rejected credentials, both collector health endpoints, and the Prometheus scrape body when the exporter is enabled.
 
 ## Continuous integration and delivery
 
@@ -177,5 +191,5 @@ No registry secret is required. The workflow grants `packages: write` only to th
 - `docker compose up --wait` may take several minutes on first boot while Steam downloads Palworld. Follow progress with `docker compose logs -f palworld`.
 - A healthy Palworld process with an unhealthy collector readiness endpoint usually indicates a URL or admin-password mismatch. The password must match in the copied `server.env` and `collector.env` files.
 - A failing `/game-data` request usually means `ENABLE_GAMEDATA_API=true` was not applied before the Palworld server started.
-- If port 8212 or 8080 is already occupied, change the host side of the loopback port mapping and set the corresponding integration-test URL. The collector-to-Palworld URL inside Compose remains `http://palworld:8212`.
+- If port 8212, 8080, or 9090 is already occupied, change the host side of the loopback port mapping and set the corresponding integration-test URL (`PALMAP_PALWORLD_URL`, `PALMAP_COLLECTOR_URL`, or `PALMAP_METRICS_URL`). The collector-to-Palworld URL inside Compose remains `http://palworld:8212`.
 - Repeated delivery retries usually indicate an unreachable ingest URL or an unavailable hosted API. Any endpoint override is accepted only when both `DOTNET_ENVIRONMENT=Development` and `PalmapIngest__AllowInsecureHttp=true`; production uses the hosted HTTPS default.

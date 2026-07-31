@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using Palmap.Collector.Services;
 using Palmap.CollectorApi;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services;
 using Palmap.CollectorApi.Services.Internal;
 using Palmap.PalworldApi.Models;
@@ -155,6 +156,40 @@ public sealed class CollectorIngestTests
         var settings = host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
 
         Assert.Equal(expectedClientId, settings.ClientId);
+    }
+
+    [Fact]
+    public void DisabledIngestAllowsMissingCredentialsAndKeepsSnapshotCollector()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["PalmapIngest:Enabled"] = "false";
+        builder.AddCollectorApi();
+        using var host = builder.Build();
+
+        var settings = host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
+
+        Assert.False(settings.Enabled);
+        Assert.Null(settings.ClientId);
+        Assert.Null(settings.ClientSecret);
+        Assert.Null(settings.PrivacyKey);
+        Assert.IsType<SnapshotCollectorApiService>(host.Services.GetRequiredService<ICollectorApiService>());
+        Assert.DoesNotContain(
+            builder.Services,
+            descriptor => descriptor.ImplementationType == typeof(SnapshotDeliveryService));
+    }
+
+    [Fact]
+    public void SanitizerUsesEphemeralPrivacyKeyWhenIngestDisabledAndKeyUnset()
+    {
+        var sanitizer = new SnapshotSanitizer(new StaticOptionsMonitor<PalmapIngestSettings>(new()
+        {
+            Enabled = false
+        }));
+
+        var players = sanitizer.Players(Players());
+
+        Assert.Single(players);
+        Assert.False(string.IsNullOrWhiteSpace(players[0].Id));
     }
 
     [Fact]
@@ -488,6 +523,7 @@ public sealed class CollectorIngestTests
         new HttpClientFactory(client),
         new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()),
         TimeProvider.System,
+        new CollectorMetrics(TimeProvider.System),
         NullLogger<SnapshotDeliveryService>.Instance);
 
     private static void AddValidIngestConfiguration(IConfiguration configuration, string? endpoint = null)

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -5,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.Protocol;
 
 namespace Palmap.CollectorApi.Services.Internal;
@@ -14,6 +16,7 @@ internal sealed class SnapshotDeliveryService(
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<PalmapIngestSettings> settings,
     TimeProvider timeProvider,
+    ICollectorMetricService collectorMetrics,
     ILogger<SnapshotDeliveryService> logger) : BackgroundService
 {
     public const string HttpClientName = "PalmapIngest";
@@ -106,6 +109,7 @@ internal sealed class SnapshotDeliveryService(
 
     internal async Task<DeliveryResult> Send(byte[] stableBody, CancellationToken stoppingToken)
     {
+        var started = Stopwatch.GetTimestamp();
         var current = settings.CurrentValue;
         using var request = new HttpRequestMessage(HttpMethod.Post, current.Endpoint)
         {
@@ -126,6 +130,7 @@ internal sealed class SnapshotDeliveryService(
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         timeout.CancelAfter(current.RequestTimeoutMs);
         HttpResponseMessage response;
+        DeliveryResult result;
         try
         {
             response = await httpClientFactory.CreateClient(HttpClientName)
@@ -133,20 +138,32 @@ internal sealed class SnapshotDeliveryService(
         }
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
-            return new(DeliveryOutcome.Retry);
+            result = new(DeliveryOutcome.Retry);
+            collectorMetrics.RecordIngestDelivery(
+                OutcomeLabel(result.Outcome),
+                Stopwatch.GetElapsedTime(started).TotalSeconds);
+            return result;
         }
         catch (HttpRequestException)
         {
-            return new(DeliveryOutcome.Retry);
+            result = new(DeliveryOutcome.Retry);
+            collectorMetrics.RecordIngestDelivery(
+                OutcomeLabel(result.Outcome),
+                Stopwatch.GetElapsedTime(started).TotalSeconds);
+            return result;
         }
 
         using (response)
         {
-            return Classify(
+            result = Classify(
                 response.StatusCode,
                 response.Headers.RetryAfter,
                 timeProvider.GetUtcNow(),
                 TimeSpan.FromMilliseconds(current.MaximumRetryDelayMs));
+            collectorMetrics.RecordIngestDelivery(
+                OutcomeLabel(result.Outcome),
+                Stopwatch.GetElapsedTime(started).TotalSeconds);
+            return result;
         }
     }
 
@@ -169,6 +186,15 @@ internal sealed class SnapshotDeliveryService(
             >= HttpStatusCode.InternalServerError => new(DeliveryOutcome.Retry),
             _ => new(DeliveryOutcome.Rejected)
         };
+
+    private static string OutcomeLabel(DeliveryOutcome outcome) => outcome switch
+    {
+        DeliveryOutcome.Accepted => "accepted",
+        DeliveryOutcome.Retry => "retry",
+        DeliveryOutcome.Rejected => "rejected",
+        DeliveryOutcome.Terminal => "terminal",
+        _ => "unknown"
+    };
 
     private TimeSpan RetryDelay(int attempt, TimeSpan? retryAfter)
     {

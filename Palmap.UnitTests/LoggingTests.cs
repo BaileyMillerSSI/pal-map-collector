@@ -4,6 +4,7 @@ using Palmap.Collector.Health;
 using Palmap.Collector.Logging;
 using Palmap.Collector.Services;
 using Palmap.CollectorApi.Configuration;
+using Palmap.CollectorApi.Metrics;
 using Palmap.CollectorApi.Services.Internal;
 using Serilog.Events;
 
@@ -78,6 +79,7 @@ public sealed class LoggingTests
             new StaticOptionsMonitor<CollectorSettings>(new()),
             new StubPalworldApiHealthService(),
             new RecordingCollectorDelay(),
+            new CollectorMetrics(TimeProvider.System),
             logger);
 
         await worker.ReportOnce(CancellationToken.None);
@@ -98,6 +100,7 @@ public sealed class LoggingTests
             new StaticOptionsMonitor<CollectorSettings>(new()),
             new StubPalworldApiHealthService(),
             new RecordingCollectorDelay(),
+            new CollectorMetrics(TimeProvider.System),
             logger);
 
         worker.LogSourceFailure(new InvalidDataException(sensitiveText));
@@ -194,6 +197,7 @@ public sealed class LoggingTests
             MaximumDeliveryAttempts = 5
         }),
         TimeProvider.System,
+        new CollectorMetrics(TimeProvider.System),
         logger);
 
     private sealed class StubHttpClientFactory : IHttpClientFactory

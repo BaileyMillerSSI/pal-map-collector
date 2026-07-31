@@ -40,6 +40,21 @@ internal sealed class StubPalworldApiService : IPalworldApiService, IPalworldApi
 
     public Exception? PlayerListException { get; set; }
 
+    public ServerMetricsResponse Metrics { get; } = new()
+    {
+        ServerFps = 57,
+        CurrentPlayerCount = 3,
+        ServerFrameTimeMilliseconds = 16.7,
+        MaxPlayerCount = 32,
+        UptimeSeconds = 3600,
+        BaseCampCount = 5,
+        Days = 12
+    };
+
+    public Exception? ServerMetricsException { get; set; }
+
+    public int ServerMetricsCallCount { get; private set; }
+
     public Task<ServerInfoResponse> ServerInfo(CancellationToken cancellationToken = default) =>
         Task.FromResult(new ServerInfoResponse());
 
@@ -69,9 +84,13 @@ internal sealed class StubPalworldApiService : IPalworldApiService, IPalworldApi
         return pending?.Task ?? Task.FromResult(Snapshot);
     }
 
-    public Task<ServerMetricsResponse> ServerMetrics(CancellationToken cancellationToken = default) =>
-        Task.FromResult(new ServerMetricsResponse());
-
+    public Task<ServerMetricsResponse> ServerMetrics(CancellationToken cancellationToken = default)
+    {
+        ServerMetricsCallCount++;
+        return ServerMetricsException is null
+            ? Task.FromResult(Metrics)
+            : Task.FromException<ServerMetricsResponse>(ServerMetricsException);
+    }
     public Task<bool> Ping(CancellationToken cancellationToken = default)
     {
         PingCallCount++;

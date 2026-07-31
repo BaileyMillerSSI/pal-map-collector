@@ -59,6 +59,19 @@ internal sealed class PalworldApiHealthService(
 
     public void MarkUnhealthy() => SetState(Unhealthy);
 
+    public bool TryGetLastKnownHealthy(out bool isHealthy)
+    {
+        var state = Volatile.Read(ref _state);
+        if (state == Unknown)
+        {
+            isHealthy = false;
+            return false;
+        }
+
+        isHealthy = state == Healthy;
+        return true;
+    }
+
     public void Dispose() => _probeLock.Dispose();
 
     private bool TryGetCachedState(out bool isHealthy)
