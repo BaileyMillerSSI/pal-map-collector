@@ -188,9 +188,7 @@ public sealed class LoggingTests
 
     private static SnapshotDeliveryService DeliveryService(ILogger<SnapshotDeliveryService> logger) => new(
         new LatestSnapshotQueue(),
-        new IdleSnapshotPolicy(
-            new StaticOptionsMonitor<PalmapIngestSettings>(new PalmapIngestSettings()),
-            TimeProvider.System),
+        new IdleSnapshotPolicy(TimeProvider.System),
         new StubHttpClientFactory(),
         new StaticOptionsMonitor<PalmapIngestSettings>(new PalmapIngestSettings
         {

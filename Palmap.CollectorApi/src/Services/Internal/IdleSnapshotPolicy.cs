@@ -1,15 +1,12 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.Options;
 using Palmap.CollectorApi.Configuration;
 using Palmap.Protocol;
 
 namespace Palmap.CollectorApi.Services.Internal;
 
-internal sealed class IdleSnapshotPolicy(
-    IOptionsMonitor<PalmapIngestSettings> settings,
-    TimeProvider timeProvider)
+internal sealed class IdleSnapshotPolicy(TimeProvider timeProvider)
 {
     private PublicServerDetails? _acceptedServer;
     private byte[]? _acceptedDeliveryConfigurationDigest;
@@ -18,9 +15,8 @@ internal sealed class IdleSnapshotPolicy(
     private string? _acceptedCollectorVersion;
     private bool _armed;
 
-    public bool ShouldDeliver(SnapshotEnvelopeV1 snapshot)
+    public bool ShouldDeliver(SnapshotEnvelopeV1 snapshot, PalmapIngestSettings current)
     {
-        var current = settings.CurrentValue;
         if (!current.SuppressIdleSnapshots)
         {
             Reset();
@@ -39,7 +35,7 @@ internal sealed class IdleSnapshotPolicy(
         }
 
         var heartbeatDue = _acceptedAt.AddMilliseconds(current.IdleSnapshotHeartbeatIntervalMs);
-        if (timeProvider.GetUtcNow() >= heartbeatDue || !HasSamePublicConfiguration(snapshot))
+        if (timeProvider.GetUtcNow() >= heartbeatDue || !HasSamePublicConfiguration(snapshot, current))
         {
             Reset();
             return true;
@@ -48,9 +44,9 @@ internal sealed class IdleSnapshotPolicy(
         return false;
     }
 
-    public void MarkAccepted(SnapshotEnvelopeV1 snapshot)
+    public void MarkAccepted(SnapshotEnvelopeV1 snapshot, PalmapIngestSettings current)
     {
-        if (!settings.CurrentValue.SuppressIdleSnapshots || !IsCompleteHealthyEmpty(snapshot))
+        if (!current.SuppressIdleSnapshots || !IsCompleteHealthyEmpty(snapshot))
         {
             Reset();
             return;
@@ -60,7 +56,7 @@ internal sealed class IdleSnapshotPolicy(
         _acceptedSchemaVersion = snapshot.SchemaVersion;
         _acceptedCollectorVersion = snapshot.CollectorVersion;
         _acceptedServer = snapshot.Snapshot.Server.Data;
-        _acceptedDeliveryConfigurationDigest = DeliveryConfigurationDigest(settings.CurrentValue);
+        _acceptedDeliveryConfigurationDigest = DeliveryConfigurationDigest(current);
         _acceptedAt = timeProvider.GetUtcNow();
         _armed = true;
     }
@@ -73,10 +69,10 @@ internal sealed class IdleSnapshotPolicy(
         IsFreshAndHealthy(snapshot.Snapshot.Server.Status) &&
         snapshot.Snapshot.Server.Data is not null;
 
-    private bool HasSamePublicConfiguration(SnapshotEnvelopeV1 snapshot)
+    private bool HasSamePublicConfiguration(SnapshotEnvelopeV1 snapshot, PalmapIngestSettings current)
     {
         var server = snapshot.Snapshot.Server.Data!;
-        var deliveryConfigurationDigest = DeliveryConfigurationDigest(settings.CurrentValue);
+        var deliveryConfigurationDigest = DeliveryConfigurationDigest(current);
         try
         {
             return snapshot.SchemaVersion == _acceptedSchemaVersion &&

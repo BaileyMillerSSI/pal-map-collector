@@ -32,18 +32,19 @@ internal sealed class SnapshotDeliveryService(
 
     internal async Task ProcessSnapshot(SnapshotEnvelopeV1 snapshot, CancellationToken stoppingToken)
     {
-        if (!idleSnapshotPolicy.ShouldDeliver(snapshot))
+        var current = settings.CurrentValue;
+        if (!idleSnapshotPolicy.ShouldDeliver(snapshot, current))
         {
             return;
         }
 
         var stableBody = SnapshotContractV1.SerializeToUtf8Bytes(snapshot);
-        for (var attempt = 1; attempt <= settings.CurrentValue.MaximumDeliveryAttempts; attempt++)
+        for (var attempt = 1; attempt <= current.MaximumDeliveryAttempts; attempt++)
         {
-            var result = await Send(stableBody, stoppingToken);
+            var result = await Send(stableBody, current, stoppingToken);
             if (result.Outcome == DeliveryOutcome.Accepted)
             {
-                idleSnapshotPolicy.MarkAccepted(snapshot);
+                idleSnapshotPolicy.MarkAccepted(snapshot, current);
                 LogAccepted(snapshot.Sequence);
                 break;
             }
@@ -61,10 +62,10 @@ internal sealed class SnapshotDeliveryService(
                 break;
             }
 
-            LogRetry(snapshot.Sequence, attempt);
-            if (attempt < settings.CurrentValue.MaximumDeliveryAttempts)
+            LogRetry(snapshot.Sequence, attempt, current.MaximumDeliveryAttempts);
+            if (attempt < current.MaximumDeliveryAttempts)
             {
-                await Task.Delay(RetryDelay(attempt, result.RetryAfter), stoppingToken);
+                await Task.Delay(RetryDelay(attempt, result.RetryAfter, current), stoppingToken);
             }
         }
     }
@@ -83,7 +84,7 @@ internal sealed class SnapshotDeliveryService(
         _deliveryDegraded = false;
     }
 
-    internal void LogRetry(long sequence, int attempt)
+    internal void LogRetry(long sequence, int attempt, int? maximumAttempts = null)
     {
         if (!_deliveryDegraded)
         {
@@ -97,7 +98,7 @@ internal sealed class SnapshotDeliveryService(
             "Snapshot sequence {Sequence} delivery attempt {Attempt} of {MaximumAttempts} did not succeed.",
             sequence,
             attempt,
-            settings.CurrentValue.MaximumDeliveryAttempts);
+            maximumAttempts ?? settings.CurrentValue.MaximumDeliveryAttempts);
     }
 
     internal void LogRejected(long sequence)
@@ -118,7 +119,14 @@ internal sealed class SnapshotDeliveryService(
 
     internal async Task<DeliveryResult> Send(byte[] stableBody, CancellationToken stoppingToken)
     {
-        var current = settings.CurrentValue;
+        return await Send(stableBody, settings.CurrentValue, stoppingToken);
+    }
+
+    private async Task<DeliveryResult> Send(
+        byte[] stableBody,
+        PalmapIngestSettings current,
+        CancellationToken stoppingToken)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Post, current.Endpoint)
         {
             Content = new ByteArrayContent(stableBody)
@@ -182,9 +190,12 @@ internal sealed class SnapshotDeliveryService(
             _ => new(DeliveryOutcome.Rejected)
         };
 
-    private TimeSpan RetryDelay(int attempt, TimeSpan? retryAfter)
+    private static TimeSpan RetryDelay(
+        int attempt,
+        TimeSpan? retryAfter,
+        PalmapIngestSettings current)
     {
-        var maximum = TimeSpan.FromMilliseconds(settings.CurrentValue.MaximumRetryDelayMs);
+        var maximum = TimeSpan.FromMilliseconds(current.MaximumRetryDelayMs);
         if (retryAfter is not null)
         {
             return retryAfter.Value;

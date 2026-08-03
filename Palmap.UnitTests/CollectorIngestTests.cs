@@ -502,9 +502,7 @@ public sealed class CollectorIngestTests
 
     private static SnapshotDeliveryService DeliveryService(HttpClient client) => new(
         new LatestSnapshotQueue(),
-        new IdleSnapshotPolicy(
-            new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()),
-            TimeProvider.System),
+        new IdleSnapshotPolicy(TimeProvider.System),
         new HttpClientFactory(client),
         new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()),
         TimeProvider.System,
