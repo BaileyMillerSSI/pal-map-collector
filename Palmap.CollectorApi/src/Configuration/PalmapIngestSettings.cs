@@ -31,4 +31,9 @@ internal sealed record PalmapIngestSettings
 
     [Range(1, int.MaxValue)]
     public int MaximumRetryDelayMs { get; init; } = 60_000;
+
+    public bool SuppressIdleSnapshots { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int IdleSnapshotHeartbeatIntervalMs { get; init; } = 21_600_000;
 }

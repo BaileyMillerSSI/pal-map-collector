@@ -38,7 +38,24 @@ public sealed class CollectorIngestTests
         Assert.Equal("https://pal-map.com", PalmapIngress.DefaultBaseUrl);
         Assert.Equal("https://pal-map.com/api/ingest/v1/snapshots", settings.Endpoint);
         Assert.Equal(ValidClientId, settings.ClientId);
+        Assert.False(settings.SuppressIdleSnapshots);
+        Assert.Equal(21_600_000, settings.IdleSnapshotHeartbeatIntervalMs);
         Assert.IsType<SnapshotCollectorApiService>(host.Services.GetRequiredService<ICollectorApiService>());
+    }
+
+    [Fact]
+    public void IdleSnapshotHeartbeatIntervalMustBePositive()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        AddValidIngestConfiguration(builder.Configuration);
+        builder.Configuration["PalmapIngest:IdleSnapshotHeartbeatIntervalMs"] = "0";
+        builder.AddCollectorApi();
+        using var host = builder.Build();
+
+        Assert.Throws<OptionsValidationException>(() =>
+        {
+            _ = host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
+        });
     }
 
     [Theory]
@@ -485,6 +502,9 @@ public sealed class CollectorIngestTests
 
     private static SnapshotDeliveryService DeliveryService(HttpClient client) => new(
         new LatestSnapshotQueue(),
+        new IdleSnapshotPolicy(
+            new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()),
+            TimeProvider.System),
         new HttpClientFactory(client),
         new StaticOptionsMonitor<PalmapIngestSettings>(ValidSettings()),
         TimeProvider.System,

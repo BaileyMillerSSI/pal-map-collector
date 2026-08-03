@@ -11,6 +11,7 @@ namespace Palmap.CollectorApi.Services.Internal;
 
 internal sealed class SnapshotDeliveryService(
     LatestSnapshotQueue queue,
+    IdleSnapshotPolicy idleSnapshotPolicy,
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<PalmapIngestSettings> settings,
     TimeProvider timeProvider,
@@ -25,34 +26,45 @@ internal sealed class SnapshotDeliveryService(
         while (!stoppingToken.IsCancellationRequested)
         {
             var snapshot = await queue.Read(stoppingToken);
-            var stableBody = SnapshotContractV1.SerializeToUtf8Bytes(snapshot);
-            for (var attempt = 1; attempt <= settings.CurrentValue.MaximumDeliveryAttempts; attempt++)
+            await ProcessSnapshot(snapshot, stoppingToken);
+        }
+    }
+
+    internal async Task ProcessSnapshot(SnapshotEnvelopeV1 snapshot, CancellationToken stoppingToken)
+    {
+        if (!idleSnapshotPolicy.ShouldDeliver(snapshot))
+        {
+            return;
+        }
+
+        var stableBody = SnapshotContractV1.SerializeToUtf8Bytes(snapshot);
+        for (var attempt = 1; attempt <= settings.CurrentValue.MaximumDeliveryAttempts; attempt++)
+        {
+            var result = await Send(stableBody, stoppingToken);
+            if (result.Outcome == DeliveryOutcome.Accepted)
             {
-                var result = await Send(stableBody, stoppingToken);
-                if (result.Outcome == DeliveryOutcome.Accepted)
-                {
-                    LogAccepted(snapshot.Sequence);
-                    break;
-                }
+                idleSnapshotPolicy.MarkAccepted(snapshot);
+                LogAccepted(snapshot.Sequence);
+                break;
+            }
 
-                if (result.Outcome == DeliveryOutcome.Terminal)
-                {
-                    throw new InvalidOperationException(
-                        "Pal-Map ingest rejected collector authentication or protocol compatibility; snapshot " +
-                        "delivery cannot continue. Verify the issued credentials and supported protocol version.");
-                }
+            if (result.Outcome == DeliveryOutcome.Terminal)
+            {
+                throw new InvalidOperationException(
+                    "Pal-Map ingest rejected collector authentication or protocol compatibility; snapshot " +
+                    "delivery cannot continue. Verify the issued credentials and supported protocol version.");
+            }
 
-                if (result.Outcome == DeliveryOutcome.Rejected)
-                {
-                    LogRejected(snapshot.Sequence);
-                    break;
-                }
+            if (result.Outcome == DeliveryOutcome.Rejected)
+            {
+                LogRejected(snapshot.Sequence);
+                break;
+            }
 
-                LogRetry(snapshot.Sequence, attempt);
-                if (attempt < settings.CurrentValue.MaximumDeliveryAttempts)
-                {
-                    await Task.Delay(RetryDelay(attempt, result.RetryAfter), stoppingToken);
-                }
+            LogRetry(snapshot.Sequence, attempt);
+            if (attempt < settings.CurrentValue.MaximumDeliveryAttempts)
+            {
+                await Task.Delay(RetryDelay(attempt, result.RetryAfter), stoppingToken);
             }
         }
     }
