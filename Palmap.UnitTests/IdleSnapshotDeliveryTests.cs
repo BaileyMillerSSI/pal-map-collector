@@ -220,6 +220,43 @@ public sealed class IdleSnapshotDeliveryTests
         Assert.Equal(2, handler.RequestCount);
     }
 
+    [Theory]
+    [InlineData("endpoint")]
+    [InlineData("clientId")]
+    [InlineData("clientSecret")]
+    [InlineData("transport")]
+    [InlineData("heartbeat")]
+    public async Task ChangedDeliveryConfigurationBreaksSilence(string setting)
+    {
+        var responses = new Queue<HttpStatusCode>([HttpStatusCode.Accepted, HttpStatusCode.Accepted]);
+        var monitor = new MutableOptionsMonitor<PalmapIngestSettings>(Settings());
+        var time = new ManualTimeProvider(HealthyEmpty().CollectedAt);
+        var handler = new QueueResponseHandler(responses);
+        using var client = new HttpClient(handler);
+        var service = new SnapshotDeliveryService(
+            new LatestSnapshotQueue(),
+            new IdleSnapshotPolicy(monitor, time),
+            new HttpClientFactory(client),
+            monitor,
+            time,
+            NullLogger<SnapshotDeliveryService>.Instance);
+        var baseline = HealthyEmpty();
+        await service.ProcessSnapshot(baseline, CancellationToken.None);
+
+        monitor.Value = setting switch
+        {
+            "endpoint" => monitor.Value with { Endpoint = "https://example.invalid/api/ingest/v1/snapshots" },
+            "clientId" => monitor.Value with { ClientId = "pmc_CCCCCCCCCCCCCCCCCCCC" },
+            "clientSecret" => monitor.Value with { ClientSecret = "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD" },
+            "transport" => monitor.Value with { AllowInsecureHttp = true },
+            "heartbeat" => monitor.Value with { IdleSnapshotHeartbeatIntervalMs = 43_200_000 },
+            _ => throw new ArgumentOutOfRangeException(nameof(setting)),
+        };
+        await service.ProcessSnapshot(RoutineChurn(baseline), CancellationToken.None);
+
+        Assert.Equal(2, handler.RequestCount);
+    }
+
     [Fact]
     public async Task HeartbeatDeadlineDisarmsUntilTheDueBaselineIsAccepted()
     {
