@@ -28,6 +28,7 @@ public static class CollectorApiExtensions
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<SnapshotSanitizer>();
         builder.Services.AddSingleton<LatestSnapshotQueue>();
+        builder.Services.AddSingleton<IdleSnapshotPolicy>();
         builder.Services.AddSingleton<GameDataRefreshSignal>();
         builder.Services.AddSingleton<SnapshotCollectorApiService>();
         builder.Services.AddSingleton<ICollectorApiService>(services =>
