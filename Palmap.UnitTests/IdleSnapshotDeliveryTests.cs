@@ -81,7 +81,7 @@ public sealed class IdleSnapshotDeliveryTests
         using var client = new HttpClient(handler);
         var service = new SnapshotDeliveryService(
             new LatestSnapshotQueue(),
-            new IdleSnapshotPolicy(monitor, TimeProvider.System),
+            new IdleSnapshotPolicy(TimeProvider.System),
             new HttpClientFactory(client),
             monitor,
             TimeProvider.System,
@@ -203,7 +203,7 @@ public sealed class IdleSnapshotDeliveryTests
         using var client = new HttpClient(handler);
         var service = new SnapshotDeliveryService(
             new LatestSnapshotQueue(),
-            new IdleSnapshotPolicy(monitor, time),
+            new IdleSnapshotPolicy(time),
             new HttpClientFactory(client),
             monitor,
             time,
@@ -218,6 +218,74 @@ public sealed class IdleSnapshotDeliveryTests
         await service.ProcessSnapshot(RoutineChurn(baseline), CancellationToken.None);
 
         Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Theory]
+    [InlineData("endpoint")]
+    [InlineData("clientId")]
+    [InlineData("clientSecret")]
+    [InlineData("transport")]
+    [InlineData("heartbeat")]
+    public async Task ChangedDeliveryConfigurationBreaksSilence(string setting)
+    {
+        var responses = new Queue<HttpStatusCode>([HttpStatusCode.Accepted, HttpStatusCode.Accepted]);
+        var monitor = new MutableOptionsMonitor<PalmapIngestSettings>(Settings());
+        var time = new ManualTimeProvider(HealthyEmpty().CollectedAt);
+        var handler = new QueueResponseHandler(responses);
+        using var client = new HttpClient(handler);
+        var service = new SnapshotDeliveryService(
+            new LatestSnapshotQueue(),
+            new IdleSnapshotPolicy(time),
+            new HttpClientFactory(client),
+            monitor,
+            time,
+            NullLogger<SnapshotDeliveryService>.Instance);
+        var baseline = HealthyEmpty();
+        await service.ProcessSnapshot(baseline, CancellationToken.None);
+
+        monitor.Value = setting switch
+        {
+            "endpoint" => monitor.Value with { Endpoint = "https://example.invalid/api/ingest/v1/snapshots" },
+            "clientId" => monitor.Value with { ClientId = "pmc_CCCCCCCCCCCCCCCCCCCC" },
+            "clientSecret" => monitor.Value with { ClientSecret = "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD" },
+            "transport" => monitor.Value with { AllowInsecureHttp = true },
+            "heartbeat" => monitor.Value with { IdleSnapshotHeartbeatIntervalMs = 43_200_000 },
+            _ => throw new ArgumentOutOfRangeException(nameof(setting)),
+        };
+        await service.ProcessSnapshot(RoutineChurn(baseline), CancellationToken.None);
+
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task ConfigurationChangedDuringAcceptedRequestRearmsUsingTheAcceptedAttemptSettings()
+    {
+        var original = Settings();
+        var changed = original with
+        {
+            Endpoint = "https://example.invalid/api/ingest/v1/snapshots",
+            ClientSecret = "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+        };
+        var monitor = new MutableOptionsMonitor<PalmapIngestSettings>(original);
+        var time = new ManualTimeProvider(HealthyEmpty().CollectedAt);
+        var handler = new ConfigurationChangingHandler(monitor, changed);
+        using var client = new HttpClient(handler);
+        var service = new SnapshotDeliveryService(
+            new LatestSnapshotQueue(),
+            new IdleSnapshotPolicy(time),
+            new HttpClientFactory(client),
+            monitor,
+            time,
+            NullLogger<SnapshotDeliveryService>.Instance);
+        var baseline = HealthyEmpty();
+
+        await service.ProcessSnapshot(baseline, CancellationToken.None);
+        await service.ProcessSnapshot(RoutineChurn(baseline), CancellationToken.None);
+
+        Assert.Equal(
+            [new Uri(PalmapIngestSettings.DefaultEndpoint), new Uri(changed.Endpoint!)],
+            handler.RequestUris);
+        Assert.Equal(2, handler.AuthorizationParameters.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
@@ -269,7 +337,7 @@ public sealed class IdleSnapshotDeliveryTests
         return (
             new SnapshotDeliveryService(
                 new LatestSnapshotQueue(),
-                new IdleSnapshotPolicy(monitor, time),
+                new IdleSnapshotPolicy(time),
                 new HttpClientFactory(client),
                 monitor,
                 time,
@@ -384,6 +452,29 @@ public sealed class IdleSnapshotDeliveryTests
             return RequestCount == 1
                 ? Task.FromException<HttpResponseMessage>(new TaskCanceledException())
                 : Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+        }
+    }
+
+    private sealed class ConfigurationChangingHandler(
+        MutableOptionsMonitor<PalmapIngestSettings> monitor,
+        PalmapIngestSettings changed) : HttpMessageHandler
+    {
+        public List<Uri> RequestUris { get; } = [];
+
+        public List<string> AuthorizationParameters { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestUris.Add(request.RequestUri!);
+            AuthorizationParameters.Add(request.Headers.Authorization!.Parameter!);
+            if (RequestUris.Count == 1)
+            {
+                monitor.Value = changed;
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
         }
     }
 

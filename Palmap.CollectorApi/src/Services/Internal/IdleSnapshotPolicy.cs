@@ -1,24 +1,22 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
-using Microsoft.Extensions.Options;
+using System.Text;
 using Palmap.CollectorApi.Configuration;
 using Palmap.Protocol;
 
 namespace Palmap.CollectorApi.Services.Internal;
 
-internal sealed class IdleSnapshotPolicy(
-    IOptionsMonitor<PalmapIngestSettings> settings,
-    TimeProvider timeProvider)
+internal sealed class IdleSnapshotPolicy(TimeProvider timeProvider)
 {
     private PublicServerDetails? _acceptedServer;
-    private byte[]? _acceptedPrivacyKeyDigest;
+    private byte[]? _acceptedDeliveryConfigurationDigest;
     private DateTimeOffset _acceptedAt;
     private int _acceptedSchemaVersion;
     private string? _acceptedCollectorVersion;
     private bool _armed;
 
-    public bool ShouldDeliver(SnapshotEnvelopeV1 snapshot)
+    public bool ShouldDeliver(SnapshotEnvelopeV1 snapshot, PalmapIngestSettings current)
     {
-        var current = settings.CurrentValue;
         if (!current.SuppressIdleSnapshots)
         {
             Reset();
@@ -37,7 +35,7 @@ internal sealed class IdleSnapshotPolicy(
         }
 
         var heartbeatDue = _acceptedAt.AddMilliseconds(current.IdleSnapshotHeartbeatIntervalMs);
-        if (timeProvider.GetUtcNow() >= heartbeatDue || !HasSamePublicConfiguration(snapshot))
+        if (timeProvider.GetUtcNow() >= heartbeatDue || !HasSamePublicConfiguration(snapshot, current))
         {
             Reset();
             return true;
@@ -46,18 +44,19 @@ internal sealed class IdleSnapshotPolicy(
         return false;
     }
 
-    public void MarkAccepted(SnapshotEnvelopeV1 snapshot)
+    public void MarkAccepted(SnapshotEnvelopeV1 snapshot, PalmapIngestSettings current)
     {
-        if (!settings.CurrentValue.SuppressIdleSnapshots || !IsCompleteHealthyEmpty(snapshot))
+        if (!current.SuppressIdleSnapshots || !IsCompleteHealthyEmpty(snapshot))
         {
             Reset();
             return;
         }
 
+        Reset();
         _acceptedSchemaVersion = snapshot.SchemaVersion;
         _acceptedCollectorVersion = snapshot.CollectorVersion;
         _acceptedServer = snapshot.Snapshot.Server.Data;
-        _acceptedPrivacyKeyDigest = PrivacyKeyDigest(settings.CurrentValue);
+        _acceptedDeliveryConfigurationDigest = DeliveryConfigurationDigest(current);
         _acceptedAt = timeProvider.GetUtcNow();
         _armed = true;
     }
@@ -70,16 +69,18 @@ internal sealed class IdleSnapshotPolicy(
         IsFreshAndHealthy(snapshot.Snapshot.Server.Status) &&
         snapshot.Snapshot.Server.Data is not null;
 
-    private bool HasSamePublicConfiguration(SnapshotEnvelopeV1 snapshot)
+    private bool HasSamePublicConfiguration(SnapshotEnvelopeV1 snapshot, PalmapIngestSettings current)
     {
         var server = snapshot.Snapshot.Server.Data!;
-        var privacyKeyDigest = PrivacyKeyDigest(settings.CurrentValue);
+        var deliveryConfigurationDigest = DeliveryConfigurationDigest(current);
         try
         {
             return snapshot.SchemaVersion == _acceptedSchemaVersion &&
                 string.Equals(snapshot.CollectorVersion, _acceptedCollectorVersion, StringComparison.Ordinal) &&
-                _acceptedPrivacyKeyDigest is not null &&
-                CryptographicOperations.FixedTimeEquals(privacyKeyDigest, _acceptedPrivacyKeyDigest) &&
+                _acceptedDeliveryConfigurationDigest is not null &&
+                CryptographicOperations.FixedTimeEquals(
+                    deliveryConfigurationDigest,
+                    _acceptedDeliveryConfigurationDigest) &&
                 _acceptedServer is not null &&
                 string.Equals(server.Name, _acceptedServer.Name, StringComparison.Ordinal) &&
                 string.Equals(server.Description, _acceptedServer.Description, StringComparison.Ordinal) &&
@@ -93,35 +94,52 @@ internal sealed class IdleSnapshotPolicy(
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(privacyKeyDigest);
+            CryptographicOperations.ZeroMemory(deliveryConfigurationDigest);
         }
     }
 
     private static bool IsFreshAndHealthy(SourceStatus status) =>
         status.State == SnapshotSourceState.Healthy && !status.IsStale;
 
-    private static byte[] PrivacyKeyDigest(PalmapIngestSettings current)
+    private static byte[] DeliveryConfigurationDigest(PalmapIngestSettings current)
     {
-        var privacyKey = PalmapIngestSettingsValidator.DecodePrivacyKey(current.PrivacyKey!);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Append(hash, current.Endpoint);
+        Append(hash, current.ClientId);
+        Append(hash, current.ClientSecret);
+        Append(hash, current.PrivacyKey);
+        Span<byte> fixedValues = stackalloc byte[9];
+        fixedValues[0] = current.AllowInsecureHttp ? (byte)1 : (byte)0;
+        BinaryPrimitives.WriteInt64BigEndian(fixedValues[1..], current.IdleSnapshotHeartbeatIntervalMs);
+        hash.AppendData(fixedValues);
+        return hash.GetHashAndReset();
+    }
+
+    private static void Append(IncrementalHash hash, string? value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value ?? string.Empty);
+        Span<byte> length = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(length, bytes.Length);
+        hash.AppendData(length);
         try
         {
-            return SHA256.HashData(privacyKey);
+            hash.AppendData(bytes);
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(privacyKey);
+            CryptographicOperations.ZeroMemory(bytes);
         }
     }
 
     private void Reset()
     {
         _acceptedServer = null;
-        if (_acceptedPrivacyKeyDigest is not null)
+        if (_acceptedDeliveryConfigurationDigest is not null)
         {
-            CryptographicOperations.ZeroMemory(_acceptedPrivacyKeyDigest);
+            CryptographicOperations.ZeroMemory(_acceptedDeliveryConfigurationDigest);
         }
 
-        _acceptedPrivacyKeyDigest = null;
+        _acceptedDeliveryConfigurationDigest = null;
         _acceptedAt = default;
         _acceptedSchemaVersion = default;
         _acceptedCollectorVersion = null;
