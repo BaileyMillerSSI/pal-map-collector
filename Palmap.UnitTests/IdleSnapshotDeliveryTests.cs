@@ -10,7 +10,7 @@ namespace Palmap.UnitTests;
 public sealed class IdleSnapshotDeliveryTests
 {
     [Fact]
-    public async Task SuppressionIsDisabledByDefault()
+    public async Task ExplicitOptOutKeepsRoutineHealthyEmptyDeliveryEnabled()
     {
         var responses = new Queue<HttpStatusCode>([HttpStatusCode.Accepted, HttpStatusCode.Accepted]);
         var (service, handler, _) = DeliveryService(Settings(suppress: false), responses);
@@ -347,16 +347,20 @@ public sealed class IdleSnapshotDeliveryTests
     }
 
     private static PalmapIngestSettings Settings(
-        bool suppress = true,
-        int heartbeatMs = 21_600_000) => new()
+        bool? suppress = null,
+        int heartbeatMs = 21_600_000)
+    {
+        var settings = new PalmapIngestSettings
         {
             ClientId = "pmc_AAAAAAAAAAAAAAAAAAAA",
             ClientSecret = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
             PrivacyKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-            SuppressIdleSnapshots = suppress,
             IdleSnapshotHeartbeatIntervalMs = heartbeatMs,
             MaximumDeliveryAttempts = 1
         };
+
+        return suppress is null ? settings : settings with { SuppressIdleSnapshots = suppress.Value };
+    }
 
     private static SnapshotEnvelopeV1 HealthyEmpty()
     {

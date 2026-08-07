@@ -38,9 +38,26 @@ public sealed class CollectorIngestTests
         Assert.Equal("https://pal-map.com", PalmapIngress.DefaultBaseUrl);
         Assert.Equal("https://pal-map.com/api/ingest/v1/snapshots", settings.Endpoint);
         Assert.Equal(ValidClientId, settings.ClientId);
-        Assert.False(settings.SuppressIdleSnapshots);
+        Assert.True(settings.SuppressIdleSnapshots);
         Assert.Equal(21_600_000, settings.IdleSnapshotHeartbeatIntervalMs);
         Assert.IsType<SnapshotCollectorApiService>(host.Services.GetRequiredService<ICollectorApiService>());
+    }
+
+    [Fact]
+    public void IdleSnapshotSuppressionCanBeExplicitlyDisabled()
+    {
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+        {
+            EnvironmentName = Environments.Production
+        });
+        AddValidIngestConfiguration(builder.Configuration);
+        builder.Configuration["PalmapIngest:SuppressIdleSnapshots"] = "false";
+        builder.AddCollectorApi();
+        using var host = builder.Build();
+
+        var settings = host.Services.GetRequiredService<IOptions<PalmapIngestSettings>>().Value;
+
+        Assert.False(settings.SuppressIdleSnapshots);
     }
 
     [Fact]
