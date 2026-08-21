@@ -86,7 +86,7 @@ The default local HTTP address is listed by `dotnet run` from `launchSettings.js
 | Setting | Default | Purpose |
 | --- | ---: | --- |
 | `LogLevel` | `Information` | Console verbosity: `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, or `None` |
-| `PalworldApi:BaseUrl` | `http://localhost:8212` | Palworld REST origin, including TCP port 8212 |
+| `PalworldApi:BaseUrl` | none | Required Palworld REST origin, including TCP port 8212; local runs use `http://localhost:8212` from the checked-in `Palmap.Collector/appsettings.json` |
 | `PalworldApi:Admin:Username` | `admin` | Palworld's REST Basic-auth username |
 | `PalworldApi:Admin:Password` | none | REST admin password; required at startup |
 | `PalmapIngest:Endpoint` | `https://pal-map.com/api/ingest/v1/snapshots` | Hosted Pal-Map snapshot v1 ingest URL; override only for explicit local Development testing |
